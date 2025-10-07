@@ -1,0 +1,224 @@
+[2025-10-07T16:49:21+00:00] MSG_RECEIVED: chat=2020715168 text=/start
+[2025-10-07T16:49:21+00:00] MSG_INFO: fell through
+[2025-10-07T16:49:21+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T16:49:22+00:00] MSG_HANDLED: open admin panel
+[2025-10-07T16:49:25+00:00] CB_RECEIVED: chat=2020715168 data=admin_stats
+[2025-10-07T16:49:27+00:00] CB_HANDLED: admin_stats
+[2025-10-07T16:49:30+00:00] CB_RECEIVED: chat=2020715168 data=admin_panel
+[2025-10-07T16:49:31+00:00] CB_HANDLED: open_menu admin_panel
+[2025-10-07T16:49:35+00:00] CB_RECEIVED: chat=2020715168 data=admin_add_product
+[2025-10-07T16:49:36+00:00] CB_HANDLED: start add_product
+[2025-10-07T16:49:55+00:00] MSG_RECEIVED: chat=2020715168 text=دوره افلاین ایلتس حرف
+[2025-10-07T16:49:56+00:00] STATE: add_product -> step 2
+[2025-10-07T16:50:04+00:00] MSG_RECEIVED: chat=2020715168 text=سه ماه تلاش کن
+[2025-10-07T16:50:05+00:00] STATE: add_product -> step 3
+[2025-10-07T16:50:13+00:00] MSG_RECEIVED: chat=2020715168 text=899999
+[2025-10-07T16:50:14+00:00] STATE: add_product -> step 4
+[2025-10-07T16:50:17+00:00] MSG_RECEIVED: chat=2020715168 text=خودم
+[2025-10-07T16:50:18+00:00] STATE: add_product -> step 5
+[2025-10-07T16:50:40+00:00] MSG_RECEIVED: chat=2020715168 text=https://t4.ftcdn.net/jpg/03/11/84/77/360_F_311847762_QImipgyQj9a
+[2025-10-07T16:50:41+00:00] STATE: add_product -> step 6 (await category)
+[2025-10-07T16:50:45+00:00] CB_RECEIVED: chat=2020715168 data=admin_p_select_cat_3
+[2025-10-07T17:05:17+00:00] MSG_RECEIVED: chat=2020715168 text=/start
+[2025-10-07T17:05:17+00:00] MSG_INFO: fell through
+[2025-10-07T17:05:21+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T17:05:22+00:00] MSG_HANDLED: open admin panel
+[2025-10-07T17:05:26+00:00] CB_RECEIVED: chat=2020715168 data=admin_stats
+[2025-10-07T17:05:27+00:00] CB_HANDLED: admin_stats
+[2025-10-07T17:05:29+00:00] CB_RECEIVED: chat=2020715168 data=admin_panel
+[2025-10-07T17:05:30+00:00] CB_HANDLED: open_menu admin_panel
+[2025-10-07T17:05:32+00:00] CB_RECEIVED: chat=2020715168 data=admin_add_product
+[2025-10-07T17:05:33+00:00] CB_HANDLED: start add_product
+[2025-10-07T17:05:45+00:00] MSG_RECEIVED: chat=2020715168 text=دوره افلاین تست
+[2025-10-07T17:05:46+00:00] STATE: add_product -> step 2
+[2025-10-07T17:05:51+00:00] MSG_RECEIVED: chat=2020715168 text=تست توضیحات
+[2025-10-07T17:05:52+00:00] STATE: add_product -> step 3
+[2025-10-07T17:05:55+00:00] MSG_RECEIVED: chat=2020715168 text=88388383
+[2025-10-07T17:05:56+00:00] STATE: add_product -> step 4
+[2025-10-07T17:05:58+00:00] MSG_RECEIVED: chat=2020715168 text=خیی
+[2025-10-07T17:05:59+00:00] STATE: add_product -> step 5
+[2025-10-07T17:06:20+00:00] MSG_RECEIVED: chat=2020715168 text=https://media.istockphoto.com/id/2196870531/photo/making-decisio
+[2025-10-07T17:06:21+00:00] STATE: add_product -> step 6 (await category)
+[2025-10-07T17:06:24+00:00] CB_RECEIVED: chat=2020715168 data=admin_p_select_cat_3
+[2025-10-07T17:06:24+00:00] STEP6_BEGIN: cat=3
+[2025-10-07T17:06:24+00:00] STEP6_STATE: id=6 step=6 pname=add_product
+[2025-10-07T17:06:24+00:00] STEP6_DATA: title=دوره افلاین تست price=88388383 author=خیی image=https://media.istockphoto.com/id/2196870531/photo/making-dec
+[2025-10-07T17:06:24+00:00] STEP6_EXCEPTION: SQLSTATE[HY000]: General error: 1364 Field 'inventory' doesn't have a default value
+[2025-10-07T17:06:24+00:00] STEP6_PDO: sqlstate=00000 driver= msg=
+[2025-10-07T17:20:43+00:00] MSG_RECEIVED: chat=2020715168 text=/start
+[2025-10-07T17:20:43+00:00] MSG_INFO: fell through
+[2025-10-07T17:20:47+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T17:20:48+00:00] MSG_HANDLED: open admin panel
+[2025-10-07T17:20:57+00:00] CB_RECEIVED: chat=2020715168 data=admin_add_product
+[2025-10-07T17:20:58+00:00] CB_HANDLED: start add_product
+[2025-10-07T17:21:18+00:00] MSG_RECEIVED: chat=2020715168 text=ieltsافلاین تتتت
+[2025-10-07T17:21:19+00:00] STATE: add_product -> step 2
+[2025-10-07T17:21:26+00:00] MSG_RECEIVED: chat=2020715168 text=تتتتتتتست تو
+[2025-10-07T17:21:27+00:00] STATE: add_product -> step 3
+[2025-10-07T17:21:34+00:00] MSG_RECEIVED: chat=2020715168 text=8888822255
+[2025-10-07T17:21:35+00:00] STATE: add_product -> step 4
+[2025-10-07T17:21:39+00:00] MSG_RECEIVED: chat=2020715168 text=mmm
+[2025-10-07T17:21:41+00:00] STATE: add_product -> step 5
+[2025-10-07T17:22:07+00:00] MSG_RECEIVED: chat=2020715168 text=https://t4.ftcdn.net/jpg/03/11/84/77/360_F_311847762_QImipgyQj9a
+[2025-10-07T17:22:08+00:00] STATE: add_product -> step 6 (await category)
+[2025-10-07T17:22:11+00:00] CB_RECEIVED: chat=2020715168 data=admin_p_select_cat_3
+[2025-10-07T17:22:11+00:00] STEP6_BEGIN: cat=3
+[2025-10-07T17:22:11+00:00] STEP6_STATE: id=7 step=6 pname=add_product
+[2025-10-07T17:22:11+00:00] STEP6_DATA: title=ieltsافلاین تتتت price=8888822255 author=mmm image=https://t4.ftcdn.net/jpg/03/11/84/77/360_F_311847762_QImipgy inv=0
+[2025-10-07T17:22:11+00:00] STEP6_CREATED: product_id=13
+[2025-10-07T17:22:11+00:00] STEP6_STATE_DELETED: id=7
+[2025-10-07T17:22:14+00:00] STEP6_DONE
+[2025-10-07T17:23:32+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product
+[2025-10-07T17:23:33+00:00] CB_HANDLED: list edit_product
+[2025-10-07T17:23:38+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_select_13
+[2025-10-07T17:23:40+00:00] CB_HANDLED: showProductInfo view pid=13
+[2025-10-07T17:23:44+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_select_13
+[2025-10-07T17:23:45+00:00] CB_HANDLED: showProductInfo view pid=13
+[2025-10-07T17:23:50+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_select_13
+[2025-10-07T17:23:51+00:00] CB_HANDLED: showProductInfo view pid=13
+[2025-10-07T17:23:58+00:00] CB_RECEIVED: chat=2020715168 data=admin_panel
+[2025-10-07T17:23:59+00:00] CB_HANDLED: open_menu admin_panel
+[2025-10-07T17:24:02+00:00] CB_RECEIVED: chat=2020715168 data=admin_delete_product
+[2025-10-07T17:24:03+00:00] CB_HANDLED: list delete_product
+[2025-10-07T17:24:06+00:00] CB_RECEIVED: chat=2020715168 data=admin_delete_select_13
+[2025-10-07T17:24:07+00:00] CB_HANDLED: showProductInfo delete pid=13
+[2025-10-07T17:24:10+00:00] CB_RECEIVED: chat=2020715168 data=admin_delete_confirm_13
+[2025-10-07T17:24:11+00:00] CB_HANDLED: delete_confirm pid=13
+[2025-10-07T17:25:02+00:00] CB_RECEIVED: chat=2020715168 data=admin_panel
+[2025-10-07T17:25:03+00:00] CB_HANDLED: open_menu admin_panel
+[2025-10-07T17:25:09+00:00] CB_RECEIVED: chat=2020715168 data=admin_add_category
+[2025-10-07T17:25:10+00:00] CB_HANDLED: start add_category
+[2025-10-07T17:25:14+00:00] MSG_RECEIVED: chat=2020715168 text=jsss
+[2025-10-07T17:25:15+00:00] STATE: add_category -> step 2
+[2025-10-07T17:25:23+00:00] MSG_RECEIVED: chat=2020715168 text=🤓
+[2025-10-07T17:25:27+00:00] STATE_DONE: add_category name=jsss
+[2025-10-07T17:25:30+00:00] CB_RECEIVED: chat=2020715168 data=admin_add_product
+[2025-10-07T17:25:32+00:00] CB_HANDLED: start add_product
+[2025-10-07T17:25:36+00:00] MSG_RECEIVED: chat=2020715168 text=terst
+[2025-10-07T17:25:37+00:00] STATE: add_product -> step 2
+[2025-10-07T17:25:41+00:00] MSG_RECEIVED: chat=2020715168 text=dddd
+[2025-10-07T17:25:41+00:00] STATE: add_product -> step 3
+[2025-10-07T17:25:46+00:00] MSG_RECEIVED: chat=2020715168 text=55
+[2025-10-07T17:25:47+00:00] STATE: add_product -> step 4
+[2025-10-07T17:25:50+00:00] MSG_RECEIVED: chat=2020715168 text=dd
+[2025-10-07T17:25:51+00:00] STATE: add_product -> step 5
+[2025-10-07T17:25:52+00:00] MSG_RECEIVED: chat=2020715168 text=https://t4.ftcdn.net/jpg/03/11/84/77/360_F_311847762_QImipgyQj9a
+[2025-10-07T17:25:53+00:00] STATE: add_product -> step 6 (await category)
+[2025-10-07T17:25:57+00:00] CB_RECEIVED: chat=2020715168 data=admin_p_select_cat_4
+[2025-10-07T17:25:57+00:00] STEP6_BEGIN: cat=4
+[2025-10-07T17:25:57+00:00] STEP6_STATE: id=9 step=6 pname=add_product
+[2025-10-07T17:25:57+00:00] STEP6_DATA: title=terst price=55 author=dd image=https://t4.ftcdn.net/jpg/03/11/84/77/360_F_311847762_QImipgy inv=0
+[2025-10-07T17:25:57+00:00] STEP6_CREATED: product_id=14
+[2025-10-07T17:25:57+00:00] STEP6_STATE_DELETED: id=9
+[2025-10-07T17:25:59+00:00] STEP6_DONE
+[2025-10-07T17:26:29+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product
+[2025-10-07T17:26:30+00:00] CB_HANDLED: list edit_product
+[2025-10-07T17:26:33+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_select_14
+[2025-10-07T17:26:34+00:00] CB_HANDLED: showProductInfo view pid=14
+[2025-10-07T17:26:41+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_select_14
+[2025-10-07T17:26:42+00:00] CB_HANDLED: showProductInfo view pid=14
+[2025-10-07T17:46:02+00:00] MSG_RECEIVED: chat=2020715168 text=/start
+[2025-10-07T17:46:02+00:00] MSG_INFO: no active state
+[2025-10-07T17:46:02+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T17:46:04+00:00] MSG_HANDLED: open admin panel
+[2025-10-07T17:46:15+00:00] CB_RECEIVED: chat=2020715168 data=admin_stats
+[2025-10-07T17:46:16+00:00] CB_HANDLED: admin_stats
+[2025-10-07T17:46:20+00:00] CB_RECEIVED: chat=2020715168 data=admin_panel
+[2025-10-07T17:46:21+00:00] CB_HANDLED: open_menu admin_panel
+[2025-10-07T17:46:29+00:00] CB_RECEIVED: chat=2020715168 data=admin_add_product
+[2025-10-07T17:46:30+00:00] CB_HANDLED: start add_product
+[2025-10-07T17:46:32+00:00] MSG_RECEIVED: chat=2020715168 text=/cancel
+[2025-10-07T17:46:34+00:00] MSG_HANDLED: cancel
+[2025-10-07T17:46:37+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product
+[2025-10-07T17:46:38+00:00] CB_HANDLED: list edit_product
+[2025-10-07T17:46:41+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_select_14
+[2025-10-07T17:46:42+00:00] CB_HANDLED: showProductInfo view pid=14
+[2025-10-07T17:46:45+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_menu_14
+[2025-10-07T17:46:46+00:00] CB_HANDLED: open edit menu pid=14
+[2025-10-07T18:14:35+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_field_price_14
+[2025-10-07T18:14:37+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_field_price_14
+[2025-10-07T18:14:39+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_field_author_14
+[2025-10-07T18:14:46+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_field_title_14
+[2025-10-07T18:27:16+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_field_title_14
+[2025-10-07T18:27:22+00:00] MSG_RECEIVED: chat=2020715168 text=/start
+[2025-10-07T18:27:22+00:00] MSG_INFO: no active state
+[2025-10-07T18:27:32+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T18:27:37+00:00] MSG_HANDLED: open admin panel
+[2025-10-07T18:27:45+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T18:27:50+00:00] MSG_HANDLED: open admin panel
+[2025-10-07T18:27:56+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product
+[2025-10-07T18:28:01+00:00] CB_HANDLED: list edit_product
+[2025-10-07T18:28:09+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product
+[2025-10-07T18:28:12+00:00] CB_HANDLED: list edit_product
+[2025-10-07T18:28:23+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product
+[2025-10-07T18:28:28+00:00] CB_HANDLED: list edit_product
+[2025-10-07T18:28:35+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_select_14
+[2025-10-07T18:28:38+00:00] CB_HANDLED: showProductInfo view pid=14
+[2025-10-07T18:28:45+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_menu_14
+[2025-10-07T18:28:54+00:00] CB_HANDLED: open edit menu pid=14
+[2025-10-07T18:29:34+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_field_title_14
+[2025-10-07T18:29:44+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_field_price_14
+[2025-10-07T20:18:56+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T20:18:57+00:00] MSG_HANDLED: open admin panel
+[2025-10-07T20:19:06+00:00] CB_RECEIVED: chat=2020715168 data=admin_stats
+[2025-10-07T20:19:07+00:00] CB_HANDLED: admin_stats
+[2025-10-07T20:19:09+00:00] CB_RECEIVED: chat=2020715168 data=admin_stats
+[2025-10-07T20:19:09+00:00] CB_HANDLED: admin_stats
+[2025-10-07T20:19:11+00:00] CB_RECEIVED: chat=2020715168 data=admin_panel
+[2025-10-07T20:19:12+00:00] CB_HANDLED: open_menu admin_panel
+[2025-10-07T20:19:17+00:00] CB_RECEIVED: chat=2020715168 data=admin_add_product
+[2025-10-07T20:19:18+00:00] CB_HANDLED: start add_product
+[2025-10-07T20:19:20+00:00] MSG_RECEIVED: chat=2020715168 text=/cancel
+[2025-10-07T20:19:22+00:00] MSG_HANDLED: cancel
+[2025-10-07T20:19:27+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product
+[2025-10-07T20:19:28+00:00] CB_HANDLED: list edit_product
+[2025-10-07T20:19:31+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_select_14
+[2025-10-07T20:19:32+00:00] CB_HANDLED: showProductInfo view pid=14
+[2025-10-07T20:19:35+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_menu_14
+[2025-10-07T20:19:36+00:00] CB_HANDLED: open edit menu pid=14
+[2025-10-07T20:19:45+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_field_price_14
+[2025-10-07T20:27:45+00:00] MSG_RECEIVED: chat=2020715168 text=Admin
+[2025-10-07T20:27:45+00:00] MSG_INFO: no active state
+[2025-10-07T20:27:49+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T20:27:50+00:00] MSG_HANDLED: open admin panel
+[2025-10-07T20:27:54+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product
+[2025-10-07T20:27:55+00:00] CB_HANDLED: list edit_product
+[2025-10-07T20:27:58+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_select_14
+[2025-10-07T20:27:59+00:00] CB_HANDLED: showProductInfo view pid=14
+[2025-10-07T20:28:02+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_menu_14
+[2025-10-07T20:28:03+00:00] CB_HANDLED: open edit menu pid=14
+[2025-10-07T20:28:06+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_field_price_14
+[2025-10-07T20:28:07+00:00] CB_HANDLED: start edit field=price pid=14
+[2025-10-07T20:28:14+00:00] MSG_RECEIVED: chat=2020715168 text=20
+[2025-10-07T20:28:16+00:00] EDIT_DONE: field=price pid=14 value=20
+[2025-10-07T20:28:21+00:00] CB_RECEIVED: chat=2020715168 data=admin_panel
+[2025-10-07T20:28:22+00:00] CB_HANDLED: open_menu admin_panel
+[2025-10-07T20:28:30+00:00] CB_RECEIVED: chat=2020715168 data=admin_stats
+[2025-10-07T20:28:31+00:00] CB_HANDLED: admin_stats
+[2025-10-07T20:28:35+00:00] CB_RECEIVED: chat=2020715168 data=admin_panel
+[2025-10-07T20:28:36+00:00] CB_HANDLED: open_menu admin_panel
+[2025-10-07T20:28:47+00:00] CB_RECEIVED: chat=2020715168 data=admin_add_category
+[2025-10-07T20:28:48+00:00] CB_HANDLED: start add_category
+[2025-10-07T20:29:00+00:00] MSG_RECEIVED: chat=2020715168 text=تست ۳
+[2025-10-07T20:29:01+00:00] STATE: add_category -> step 2
+[2025-10-07T20:29:06+00:00] MSG_RECEIVED: chat=2020715168 text=🥰
+[2025-10-07T20:29:08+00:00] STATE_DONE: add_category name=تست ۳
+[2025-10-07T20:29:14+00:00] CB_RECEIVED: chat=2020715168 data=admin_add_product
+[2025-10-07T20:29:14+00:00] CB_HANDLED: start add_product
+[2025-10-07T20:29:21+00:00] MSG_RECEIVED: chat=2020715168 text=اسم تست ۳
+[2025-10-07T20:29:22+00:00] STATE: add_product -> step 2
+[2025-10-07T20:29:30+00:00] MSG_RECEIVED: chat=2020715168 text=توضیحات محصول ۳
+[2025-10-07T20:29:31+00:00] STATE: add_product -> step 3
+[2025-10-07T20:29:36+00:00] MSG_RECEIVED: chat=2020715168 text=89
+[2025-10-07T20:29:37+00:00] STATE: add_product -> step 4
+[2025-10-07T20:29:41+00:00] MSG_RECEIVED: chat=2020715168 text=خودم
+[2025-10-07T20:29:42+00:00] STATE: add_product -> step 5
+[2025-10-07T20:30:37+00:00] MSG_RECEIVED: chat=2020715168 text=https://share.google/Adn8ZDsAn3QS2UFXS
+[2025-10-07T20:30:39+00:00] STATE: add_product -> step 6 (await category)
+[2025-10-07T20:30:44+00:00] CB_RECEIVED: chat=2020715168 data=admin_p_select_cat_5
+[2025-10-07T20:30:44+00:00] STEP6_BEGIN: cat=5
+[2025-10-07T20:30:44+00:00] STEP6_STATE: id=14 step=6 pname=add_product
+[2025-10-07T20:30:44+00:00] STEP6_DATA: title=اسم تست ۳ price=89 author=خودم image=https://share.google/Adn8ZDsAn3QS2UFXS inv=0
+[2025-10-07T20:30:44+00:00] STEP6_CREATED: product_id=15
+[2025-10-07T20:30:44+00:00] STEP6_STATE_DELETED: id=14
+[2025-10-07T20:30:48+00:00] STEP6_DONE

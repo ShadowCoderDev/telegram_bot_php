@@ -2,9 +2,6 @@
 // admin_functions.php
 global $conn, $telegram, $resultTelegram, $chat_id, $mesasge_id;
 
-
-
-
 /* =================== ADMIN FUNCTIONS =================== */
 
 /**
@@ -27,6 +24,7 @@ function sendAdminPanelMenu($chat_id, $mesasge_id = false) {
 
 /**
  * نمایش لیست محصولات برای ویرایش یا حذف
+ * نکته: برای حذف اول صفحه‌ی تایید می‌آوریم => callback 'admin_delete_select_{id}'
  */
 function sendAdminProductList($chat_id, $action, $mesasge_id = false) {
     global $telegram;
@@ -39,7 +37,7 @@ function sendAdminProductList($chat_id, $action, $mesasge_id = false) {
     }
     
     $option = [];
-    $callback_prefix = ($action == 'edit_product') ? 'admin_edit_select_' : 'admin_delete_confirm_';
+    $callback_prefix = ($action == 'edit_product') ? 'admin_edit_select_' : 'admin_delete_select_'; // ✅ اصلاح شد
     $title_action = ($action == 'edit_product') ? '✏️ ویرایش' : '🗑️ حذف';
     
     foreach ($products as $product) {
@@ -57,7 +55,8 @@ function sendAdminProductList($chat_id, $action, $mesasge_id = false) {
 }
 
 /**
- * نمایش اطلاعات محصول جهت نمایش یا تایید حذف
+ * نمایش اطلاعات محصول جهت مشاهده/ویرایش یا تایید حذف
+ * دکمه «✏️ ویرایش این محصول» اضافه شد که منوی ویرایش را باز می‌کند.
  */
 function showProductInfo($chat_id, $product_id, $action = 'view', $mesasge_id = false) {
     global $telegram;
@@ -69,22 +68,26 @@ function showProductInfo($chat_id, $product_id, $action = 'view', $mesasge_id = 
         return sendMessage($chat_id, "❌ محصول یافت نشد.", $keyb, $mesasge_id);
     }
     
-    $text = "<b>📦 اطلاعات محصول:</b>\n\n";
-    $text .= "<b>نام:</b> " . $product->title . "\n";
-    $text .= "<b>توضیحات:</b> " . substr($product->description, 0, 100) . "...\n";
-    $text .= "<b>قیمت:</b> " . number_format($product->price) . " تومان\n";
-    $text .= "<b>نویسنده:</b> " . $product->author . "\n";
-    $text .= "<b>تصویر:</b> " . $product->image_url . "\n";
-    $text .= "<b>وضعیت:</b> " . ($product->status == 'enable' ? '✅ فعال' : '❌ غیرفعال') . "\n";
+    $status_txt = ($product->status == 'enable' ? '✅ فعال' : '❌ غیرفعال');
+    $text  = "<b>📦 اطلاعات محصول #{$product->id}:</b>\n\n";
+    $text .= "<b>نام:</b> {$product->title}\n";
+    $text .= "<b>توضیحات:</b> " . substr($product->description, 0, 120) . "...\n";
+    $text .= "<b>قیمت:</b> " . number_format((int)$product->price) . " تومان\n";
+    $text .= "<b>نویسنده/مدرس:</b> {$product->author}\n";
+    $text .= "<b>تصویر:</b> {$product->image_url}\n";
+    $text .= "<b>دسته:</b> {$product->category_id}\n";
+    $text .= "<b>موجودی:</b> " . ((int)($product->inventory ?? 0)) . "\n";
+    $text .= "<b>وضعیت:</b> {$status_txt}\n";
     
     if ($action == 'delete') {
         $text .= "\n⚠️ <b>آیا از حذف این محصول اطمینان دارید؟</b>";
         $option = array(
-            array($telegram->buildInlineKeyBoardButton("✅ بله، حذف کن", '', 'admin_delete_confirm_' . $product_id), $telegram->buildInlineKeyBoardButton("❌ خیر، منصرف شدم", '', 'admin_panel')),
+            array($telegram->buildInlineKeyBoardButton("✅ بله، حذف کن", '', 'admin_delete_confirm_' . $product->id), $telegram->buildInlineKeyBoardButton("❌ خیر، منصرف شدم", '', 'admin_panel')),
         );
     } else {
         $option = array(
-            array($telegram->buildInlineKeyBoardButton("✏️ ویرایش", '', 'admin_edit_select_' . $product_id), $telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'admin_panel')),
+            array($telegram->buildInlineKeyBoardButton("✏️ ویرایش این محصول", '', 'admin_edit_menu_' . $product->id)),
+            array($telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'admin_panel')),
         );
     }
     
@@ -136,7 +139,7 @@ function getDetailedStats() {
  * صدور گزارش محصولات برای ادمین
  */
 function generateProductReport($chat_id, $mesasge_id = false) {
-    global $conn;
+    global $conn, $telegram;
     
     $products = query("SELECT", "products", false, [["key" => "status", "condition" => "=", "value" => "enable"]], true, "price DESC");
     
@@ -159,7 +162,7 @@ function generateProductReport($chat_id, $mesasge_id = false) {
 }
 
 /**
- * اطلاع‌رسانی ادمین از سفارش جدید
+ * اطلاع‌رسانی ادمین از سفارش جدید (در صورت نیاز)
  */
 function notifyAdminOfNewOrder($order_id) {
     global $telegram, $conn, $ADMIN_CHAT_ID;
@@ -190,20 +193,23 @@ function notifyAdminOfNewOrder($order_id) {
     $text .= "─────────────────\n";
     $text .= "💰 <b>جمع کل فاکتور:</b> " . number_format($total_price) . " تومان\n";
 
-    // ارسال فایل رسید به همراه تمام جزئیات به عنوان کپشن
+    // دکمه پیام به خریدار
+    global $telegram;
+    $kb = $telegram->buildInlineKeyBoard([
+        [ $telegram->buildInlineKeyBoardButton("✉️ پیام به خریدار", '', 'admin_contact_buyer_' . (int)$order_id) ]
+    ]);
+
     $receipt_path = $order_details->receipt_image_url;
-    if (file_exists($receipt_path)) {
+    if ($receipt_path && file_exists($receipt_path)) {
         $content = [
             'chat_id' => $ADMIN_CHAT_ID,
-            'photo' => new CURLFile(realpath($receipt_path)),
+            'photo'   => new CURLFile(realpath($receipt_path)),
             'caption' => $text,
-            'parse_mode' => 'HTML'
+            'parse_mode' => 'HTML',
+            'reply_markup' => $kb
         ];
         $telegram->sendPhoto($content);
     } else {
-        // اگر فایل موجود نبود، فقط متن را بفرست
-        sendMessage($ADMIN_CHAT_ID, $text . "\n\n⚠️ فایل رسید یافت نشد.");
+        sendMessage($ADMIN_CHAT_ID, $text, $kb);
     }
 }
-
-

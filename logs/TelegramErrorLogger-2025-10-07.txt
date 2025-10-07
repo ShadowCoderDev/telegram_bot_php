@@ -1,0 +1,543 @@
+============[Date]============
+[ 2025-10-07 17:23:45  UTC ] 
+==========[Response]==========
+ok:			False
+error_code:		400
+description:		Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message
+=========[Sent Data]==========
+[ref]
+ref.update_id= 119059835
+ref.callback_query.id= 8678905561254675147
+ref.callback_query.from.id= 2020715168
+ref.callback_query.from.is_bot= false
+ref.callback_query.from.first_name= Lila
+ref.callback_query.from.username= MetaaVerses
+ref.callback_query.from.language_code= en
+ref.callback_query.message.message_id= 312
+ref.callback_query.message.from.id= 8267056539
+ref.callback_query.message.from.is_bot= true
+ref.callback_query.message.from.first_name= English_With_Us
+ref.callback_query.message.from.username= English_Bot_With_Us_bot
+ref.callback_query.message.chat.id= 2020715168
+ref.callback_query.message.chat.first_name= Lila
+ref.callback_query.message.chat.username= MetaaVerses
+ref.callback_query.message.chat.type= private
+ref.callback_query.message.date= 1759857734
+ref.callback_query.message.edit_date= 1759857820
+ref.callback_query.message.text= 📦 اطلاعات محصول:
+
+نام: ieltsافلاین تتتت
+توضیحات: تتتتتتتست تو...
+قیمت: 8,888,822,255 تومان
+نویسنده: mmm
+تصویر: https://t4.ftcdn.net/jpg/03/11/84/77/360_F_311847762_QImipgyQj9awBkphachgmufCjoAiiIqy.jpg
+وضعیت: ✅ فعال
+ref.callback_query.message.entities.0.offset= 0
+ref.callback_query.message.entities.0.length= 17
+ref.callback_query.message.entities.0.type= bold
+ref.callback_query.message.entities.1.offset= 19
+ref.callback_query.message.entities.1.length= 4
+ref.callback_query.message.entities.1.type= bold
+ref.callback_query.message.entities.2.offset= 41
+ref.callback_query.message.entities.2.length= 8
+ref.callback_query.message.entities.2.type= bold
+ref.callback_query.message.entities.3.offset= 66
+ref.callback_query.message.entities.3.length= 5
+ref.callback_query.message.entities.3.type= bold
+ref.callback_query.message.entities.4.offset= 92
+ref.callback_query.message.entities.4.length= 8
+ref.callback_query.message.entities.4.type= bold
+ref.callback_query.message.entities.5.offset= 105
+ref.callback_query.message.entities.5.length= 6
+ref.callback_query.message.entities.5.type= bold
+ref.callback_query.message.entities.6.offset= 112
+ref.callback_query.message.entities.6.length= 89
+ref.callback_query.message.entities.6.type= url
+ref.callback_query.message.entities.7.offset= 202
+ref.callback_query.message.entities.7.length= 6
+ref.callback_query.message.entities.7.type= bold
+ref.callback_query.message.link_preview_options.url= https://t4.ftcdn.net/jpg/03/11/84/77/360_F_311847762_QImipgyQj9awBkphachgmufCjoAiiIqy.jpg
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.text= ✏️ ویرایش
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.callback_data= admin_edit_select_13
+ref.callback_query.message.reply_markup.inline_keyboard.0.1.text= بازگشت 🔙
+ref.callback_query.message.reply_markup.inline_keyboard.0.1.callback_data= admin_panel
+ref.callback_query.chat_instance= 4392676828707811893
+ref.callback_query.data= admin_edit_select_13
+
+
+[ref]
+ref.text= <b>📦 اطلاعات محصول:</b>
+
+<b>نام:</b> ieltsافلاین تتتت
+<b>توضیحات:</b> تتتتتتتست تو...
+<b>قیمت:</b> 8,888,822,255 تومان
+<b>نویسنده:</b> mmm
+<b>تصویر:</b> https://t4.ftcdn.net/jpg/03/11/84/77/360_F_311847762_QImipgyQj9awBkphachgmufCjoAiiIqy.jpg
+<b>وضعیت:</b> ✅ فعال
+
+ref.parse_mode= HTML
+ref.reply_markup= {"inline_keyboard":[[{"text":"\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634","callback_data":"admin_edit_select_13"},{"text":"\u0628\u0627\u0632\u06af\u0634\u062a \ud83d\udd19","callback_data":"admin_panel"}]]}
+ref.message_id= 312
+
+
+============[Trace]===========
+#0 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(1862): TelegramErrorLogger::log(Array, Array)
+#1 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(124): Telegram->sendAPIRequest('https://api.tel...', Array)
+#2 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(692): Telegram->endpoint('editMessageText', Array)
+#3 /Users/afsari/PhpstormProjects/telegram_bot_php/functions.php(77): Telegram->editMessageText(Array)
+#4 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_functions.php(87): sendMessage(2020715168, '<b>\xF0\x9F\x93\xA6 \xD8\xA7\xD8\xB7\xD9\x84\xD8...', '{"inline_keyboa...', 312)
+#5 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_handler.php(124): showProductInfo(2020715168, 13, 'view', 312)
+#6 /Users/afsari/PhpstormProjects/telegram_bot_php/index.php(28): require_once('/Users/afsari/P...')
+#7 /Applications/Herd.app/Contents/Resources/valet/server.php(167): require('/Users/afsari/P...')
+#8 {main}
+
+============[Date]============
+[ 2025-10-07 17:23:51  UTC ] 
+==========[Response]==========
+ok:			False
+error_code:		400
+description:		Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message
+=========[Sent Data]==========
+[ref]
+ref.update_id= 119059836
+ref.callback_query.id= 8678905564865115698
+ref.callback_query.from.id= 2020715168
+ref.callback_query.from.is_bot= false
+ref.callback_query.from.first_name= Lila
+ref.callback_query.from.username= MetaaVerses
+ref.callback_query.from.language_code= en
+ref.callback_query.message.message_id= 312
+ref.callback_query.message.from.id= 8267056539
+ref.callback_query.message.from.is_bot= true
+ref.callback_query.message.from.first_name= English_With_Us
+ref.callback_query.message.from.username= English_Bot_With_Us_bot
+ref.callback_query.message.chat.id= 2020715168
+ref.callback_query.message.chat.first_name= Lila
+ref.callback_query.message.chat.username= MetaaVerses
+ref.callback_query.message.chat.type= private
+ref.callback_query.message.date= 1759857734
+ref.callback_query.message.edit_date= 1759857820
+ref.callback_query.message.text= 📦 اطلاعات محصول:
+
+نام: ieltsافلاین تتتت
+توضیحات: تتتتتتتست تو...
+قیمت: 8,888,822,255 تومان
+نویسنده: mmm
+تصویر: https://t4.ftcdn.net/jpg/03/11/84/77/360_F_311847762_QImipgyQj9awBkphachgmufCjoAiiIqy.jpg
+وضعیت: ✅ فعال
+ref.callback_query.message.entities.0.offset= 0
+ref.callback_query.message.entities.0.length= 17
+ref.callback_query.message.entities.0.type= bold
+ref.callback_query.message.entities.1.offset= 19
+ref.callback_query.message.entities.1.length= 4
+ref.callback_query.message.entities.1.type= bold
+ref.callback_query.message.entities.2.offset= 41
+ref.callback_query.message.entities.2.length= 8
+ref.callback_query.message.entities.2.type= bold
+ref.callback_query.message.entities.3.offset= 66
+ref.callback_query.message.entities.3.length= 5
+ref.callback_query.message.entities.3.type= bold
+ref.callback_query.message.entities.4.offset= 92
+ref.callback_query.message.entities.4.length= 8
+ref.callback_query.message.entities.4.type= bold
+ref.callback_query.message.entities.5.offset= 105
+ref.callback_query.message.entities.5.length= 6
+ref.callback_query.message.entities.5.type= bold
+ref.callback_query.message.entities.6.offset= 112
+ref.callback_query.message.entities.6.length= 89
+ref.callback_query.message.entities.6.type= url
+ref.callback_query.message.entities.7.offset= 202
+ref.callback_query.message.entities.7.length= 6
+ref.callback_query.message.entities.7.type= bold
+ref.callback_query.message.link_preview_options.url= https://t4.ftcdn.net/jpg/03/11/84/77/360_F_311847762_QImipgyQj9awBkphachgmufCjoAiiIqy.jpg
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.text= ✏️ ویرایش
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.callback_data= admin_edit_select_13
+ref.callback_query.message.reply_markup.inline_keyboard.0.1.text= بازگشت 🔙
+ref.callback_query.message.reply_markup.inline_keyboard.0.1.callback_data= admin_panel
+ref.callback_query.chat_instance= 4392676828707811893
+ref.callback_query.data= admin_edit_select_13
+
+
+[ref]
+ref.text= <b>📦 اطلاعات محصول:</b>
+
+<b>نام:</b> ieltsافلاین تتتت
+<b>توضیحات:</b> تتتتتتتست تو...
+<b>قیمت:</b> 8,888,822,255 تومان
+<b>نویسنده:</b> mmm
+<b>تصویر:</b> https://t4.ftcdn.net/jpg/03/11/84/77/360_F_311847762_QImipgyQj9awBkphachgmufCjoAiiIqy.jpg
+<b>وضعیت:</b> ✅ فعال
+
+ref.parse_mode= HTML
+ref.reply_markup= {"inline_keyboard":[[{"text":"\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634","callback_data":"admin_edit_select_13"},{"text":"\u0628\u0627\u0632\u06af\u0634\u062a \ud83d\udd19","callback_data":"admin_panel"}]]}
+ref.message_id= 312
+
+
+============[Trace]===========
+#0 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(1862): TelegramErrorLogger::log(Array, Array)
+#1 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(124): Telegram->sendAPIRequest('https://api.tel...', Array)
+#2 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(692): Telegram->endpoint('editMessageText', Array)
+#3 /Users/afsari/PhpstormProjects/telegram_bot_php/functions.php(77): Telegram->editMessageText(Array)
+#4 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_functions.php(87): sendMessage(2020715168, '<b>\xF0\x9F\x93\xA6 \xD8\xA7\xD8\xB7\xD9\x84\xD8...', '{"inline_keyboa...', 312)
+#5 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_handler.php(124): showProductInfo(2020715168, 13, 'view', 312)
+#6 /Users/afsari/PhpstormProjects/telegram_bot_php/index.php(28): require_once('/Users/afsari/P...')
+#7 /Applications/Herd.app/Contents/Resources/valet/server.php(167): require('/Users/afsari/P...')
+#8 {main}
+
+============[Date]============
+[ 2025-10-07 17:26:42  UTC ] 
+==========[Response]==========
+ok:			False
+error_code:		400
+description:		Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message
+=========[Sent Data]==========
+[ref]
+ref.update_id= 119059866
+ref.callback_query.id= 8678905562345105806
+ref.callback_query.from.id= 2020715168
+ref.callback_query.from.is_bot= false
+ref.callback_query.from.first_name= Lila
+ref.callback_query.from.username= MetaaVerses
+ref.callback_query.from.language_code= en
+ref.callback_query.message.message_id= 331
+ref.callback_query.message.from.id= 8267056539
+ref.callback_query.message.from.is_bot= true
+ref.callback_query.message.from.first_name= English_With_Us
+ref.callback_query.message.from.username= English_Bot_With_Us_bot
+ref.callback_query.message.chat.id= 2020715168
+ref.callback_query.message.chat.first_name= Lila
+ref.callback_query.message.chat.username= MetaaVerses
+ref.callback_query.message.chat.type= private
+ref.callback_query.message.date= 1759857960
+ref.callback_query.message.edit_date= 1759857994
+ref.callback_query.message.text= 📦 اطلاعات محصول:
+
+نام: terst
+توضیحات: dddd...
+قیمت: 55 تومان
+نویسنده: dd
+تصویر: https://t4.ftcdn.net/jpg/03/11/84/77/360_F_311847762_QImipgyQj9awBkphachgmufCjoAiiIqy.jpg
+وضعیت: ✅ فعال
+ref.callback_query.message.entities.0.offset= 0
+ref.callback_query.message.entities.0.length= 17
+ref.callback_query.message.entities.0.type= bold
+ref.callback_query.message.entities.1.offset= 19
+ref.callback_query.message.entities.1.length= 4
+ref.callback_query.message.entities.1.type= bold
+ref.callback_query.message.entities.2.offset= 30
+ref.callback_query.message.entities.2.length= 8
+ref.callback_query.message.entities.2.type= bold
+ref.callback_query.message.entities.3.offset= 47
+ref.callback_query.message.entities.3.length= 5
+ref.callback_query.message.entities.3.type= bold
+ref.callback_query.message.entities.4.offset= 62
+ref.callback_query.message.entities.4.length= 8
+ref.callback_query.message.entities.4.type= bold
+ref.callback_query.message.entities.5.offset= 74
+ref.callback_query.message.entities.5.length= 6
+ref.callback_query.message.entities.5.type= bold
+ref.callback_query.message.entities.6.offset= 81
+ref.callback_query.message.entities.6.length= 89
+ref.callback_query.message.entities.6.type= url
+ref.callback_query.message.entities.7.offset= 171
+ref.callback_query.message.entities.7.length= 6
+ref.callback_query.message.entities.7.type= bold
+ref.callback_query.message.link_preview_options.url= https://t4.ftcdn.net/jpg/03/11/84/77/360_F_311847762_QImipgyQj9awBkphachgmufCjoAiiIqy.jpg
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.text= ✏️ ویرایش
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.callback_data= admin_edit_select_14
+ref.callback_query.message.reply_markup.inline_keyboard.0.1.text= بازگشت 🔙
+ref.callback_query.message.reply_markup.inline_keyboard.0.1.callback_data= admin_panel
+ref.callback_query.chat_instance= 4392676828707811893
+ref.callback_query.data= admin_edit_select_14
+
+
+[ref]
+ref.text= <b>📦 اطلاعات محصول:</b>
+
+<b>نام:</b> terst
+<b>توضیحات:</b> dddd...
+<b>قیمت:</b> 55 تومان
+<b>نویسنده:</b> dd
+<b>تصویر:</b> https://t4.ftcdn.net/jpg/03/11/84/77/360_F_311847762_QImipgyQj9awBkphachgmufCjoAiiIqy.jpg
+<b>وضعیت:</b> ✅ فعال
+
+ref.parse_mode= HTML
+ref.reply_markup= {"inline_keyboard":[[{"text":"\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634","callback_data":"admin_edit_select_14"},{"text":"\u0628\u0627\u0632\u06af\u0634\u062a \ud83d\udd19","callback_data":"admin_panel"}]]}
+ref.message_id= 331
+
+
+============[Trace]===========
+#0 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(1862): TelegramErrorLogger::log(Array, Array)
+#1 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(124): Telegram->sendAPIRequest('https://api.tel...', Array)
+#2 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(692): Telegram->endpoint('editMessageText', Array)
+#3 /Users/afsari/PhpstormProjects/telegram_bot_php/functions.php(77): Telegram->editMessageText(Array)
+#4 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_functions.php(87): sendMessage(2020715168, '<b>\xF0\x9F\x93\xA6 \xD8\xA7\xD8\xB7\xD9\x84\xD8...', '{"inline_keyboa...', 331)
+#5 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_handler.php(124): showProductInfo(2020715168, 14, 'view', 331)
+#6 /Users/afsari/PhpstormProjects/telegram_bot_php/index.php(28): require_once('/Users/afsari/P...')
+#7 /Applications/Herd.app/Contents/Resources/valet/server.php(167): require('/Users/afsari/P...')
+#8 {main}
+
+============[Date]============
+[ 2025-10-07 18:28:09  UTC ] 
+==========[Response]==========
+ok:			False
+error_code:		400
+description:		Bad Request: query is too old and response timeout expired or query ID is invalid
+=========[Sent Data]==========
+[ref]
+ref.update_id= 119059885
+ref.callback_query.id= 8678905562502544117
+ref.callback_query.from.id= 2020715168
+ref.callback_query.from.is_bot= false
+ref.callback_query.from.first_name= Lila
+ref.callback_query.from.username= MetaaVerses
+ref.callback_query.from.language_code= en
+ref.callback_query.message.message_id= 342
+ref.callback_query.message.from.id= 8267056539
+ref.callback_query.message.from.is_bot= true
+ref.callback_query.message.from.first_name= English_With_Us
+ref.callback_query.message.from.username= English_Bot_With_Us_bot
+ref.callback_query.message.chat.id= 2020715168
+ref.callback_query.message.chat.first_name= Lila
+ref.callback_query.message.chat.username= MetaaVerses
+ref.callback_query.message.chat.type= private
+ref.callback_query.message.date= 1759861658
+ref.callback_query.message.text= 🔐 پنل مدیریت
+
+خوش آمدید ادمین! 👋
+یکی از گزینه‌های زیر را انتخاب کنید:
+ref.callback_query.message.entities.0.offset= 3
+ref.callback_query.message.entities.0.length= 10
+ref.callback_query.message.entities.0.type= bold
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.text= 📊 آمار ربات
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.callback_data= admin_stats
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.text= ➕ افزودن دسته‌بندی
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.callback_data= admin_add_category
+ref.callback_query.message.reply_markup.inline_keyboard.1.1.text= ➕ افزودن محصول
+ref.callback_query.message.reply_markup.inline_keyboard.1.1.callback_data= admin_add_product
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.text= ✏️ ویرایش محصول
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.callback_data= admin_edit_product
+ref.callback_query.message.reply_markup.inline_keyboard.2.1.text= 🗑️ حذف محصول
+ref.callback_query.message.reply_markup.inline_keyboard.2.1.callback_data= admin_delete_product
+ref.callback_query.message.reply_markup.inline_keyboard.3.0.text= 🏠 منوی اصلی
+ref.callback_query.message.reply_markup.inline_keyboard.3.0.callback_data= start
+ref.callback_query.chat_instance= 4392676828707811893
+ref.callback_query.data= admin_edit_product
+
+
+[ref]
+ref.callback_query_id= 8678905562502544117
+ref.text= 👌
+ref.show_alert= false
+
+
+============[Trace]===========
+#0 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(1862): TelegramErrorLogger::log(Array, Array)
+#1 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(124): Telegram->sendAPIRequest('https://api.tel...', Array)
+#2 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(598): Telegram->endpoint('answerCallbackQ...', Array)
+#3 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_handler.php(38): Telegram->answerCallbackQuery(Array)
+#4 /Users/afsari/PhpstormProjects/telegram_bot_php/index.php(28): require_once('/Users/afsari/P...')
+#5 /Applications/Herd.app/Contents/Resources/valet/server.php(167): require('/Users/afsari/P...')
+#6 {main}
+
+============[Date]============
+[ 2025-10-07 18:28:12  UTC ] 
+==========[Response]==========
+ok:			False
+error_code:		400
+description:		Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message
+=========[Sent Data]==========
+[ref]
+ref.update_id= 119059885
+ref.callback_query.id= 8678905562502544117
+ref.callback_query.from.id= 2020715168
+ref.callback_query.from.is_bot= false
+ref.callback_query.from.first_name= Lila
+ref.callback_query.from.username= MetaaVerses
+ref.callback_query.from.language_code= en
+ref.callback_query.message.message_id= 342
+ref.callback_query.message.from.id= 8267056539
+ref.callback_query.message.from.is_bot= true
+ref.callback_query.message.from.first_name= English_With_Us
+ref.callback_query.message.from.username= English_Bot_With_Us_bot
+ref.callback_query.message.chat.id= 2020715168
+ref.callback_query.message.chat.first_name= Lila
+ref.callback_query.message.chat.username= MetaaVerses
+ref.callback_query.message.chat.type= private
+ref.callback_query.message.date= 1759861658
+ref.callback_query.message.text= 🔐 پنل مدیریت
+
+خوش آمدید ادمین! 👋
+یکی از گزینه‌های زیر را انتخاب کنید:
+ref.callback_query.message.entities.0.offset= 3
+ref.callback_query.message.entities.0.length= 10
+ref.callback_query.message.entities.0.type= bold
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.text= 📊 آمار ربات
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.callback_data= admin_stats
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.text= ➕ افزودن دسته‌بندی
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.callback_data= admin_add_category
+ref.callback_query.message.reply_markup.inline_keyboard.1.1.text= ➕ افزودن محصول
+ref.callback_query.message.reply_markup.inline_keyboard.1.1.callback_data= admin_add_product
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.text= ✏️ ویرایش محصول
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.callback_data= admin_edit_product
+ref.callback_query.message.reply_markup.inline_keyboard.2.1.text= 🗑️ حذف محصول
+ref.callback_query.message.reply_markup.inline_keyboard.2.1.callback_data= admin_delete_product
+ref.callback_query.message.reply_markup.inline_keyboard.3.0.text= 🏠 منوی اصلی
+ref.callback_query.message.reply_markup.inline_keyboard.3.0.callback_data= start
+ref.callback_query.chat_instance= 4392676828707811893
+ref.callback_query.data= admin_edit_product
+
+
+[ref]
+ref.text= ✏️ ویرایش - <b>لطفاً محصول را انتخاب کنید:</b>
+
+تعداد محصولات: <b>6</b>
+ref.parse_mode= HTML
+ref.reply_markup= {"inline_keyboard":[[{"text":"\u2022 terst (55 \u062a)","callback_data":"admin_edit_select_14"}],[{"text":"\u2022 The Official Cambridge Guide I (333,333 \u062a)","callback_data":"admin_edit_select_12"}],[{"text":"\u2022 \u062f\u0648\u0631\u0647 \u0622\u0646\u0644\u0627\u06cc\u0646 \u0622\u06cc\u0644\u062a (299,000 \u062a)","callback_data":"admin_edit_select_11"}],[{"text":"\u2022 \u062f\u0648\u0631\u0647 \u0622\u0646\u0644\u0627\u06cc\u0646 \u0622\u06cc\u0644\u062a (199,000 \u062a)","callback_data":"admin_edit_select_10"}],[{"text":"\u2022 IELTS Preparation Book 2025 (90,000 \u062a)","callback_data":"admin_edit_select_9"}],[{"text":"\u2022 \u0622\u06cc\u0644\u062a\u0633 \u0648\u06cc\u0698\u0647 (58,000 \u062a)","callback_data":"admin_edit_select_8"}],[{"text":"\u0628\u0627\u0632\u06af\u0634\u062a \ud83d\udd19","callback_data":"admin_panel"}]]}
+ref.message_id= 342
+
+
+============[Trace]===========
+#0 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(1862): TelegramErrorLogger::log(Array, Array)
+#1 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(124): Telegram->sendAPIRequest('https://api.tel...', Array)
+#2 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(692): Telegram->endpoint('editMessageText', Array)
+#3 /Users/afsari/PhpstormProjects/telegram_bot_php/functions.php(77): Telegram->editMessageText(Array)
+#4 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_functions.php(54): sendMessage(2020715168, '\xE2\x9C\x8F\xEF\xB8\x8F \xD9\x88\xDB\x8C\xD8\xB1\xD8\xA7...', '{"inline_keyboa...', 342)
+#5 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_handler.php(108): sendAdminProductList(2020715168, 'edit_product', 342)
+#6 /Users/afsari/PhpstormProjects/telegram_bot_php/index.php(28): require_once('/Users/afsari/P...')
+#7 /Applications/Herd.app/Contents/Resources/valet/server.php(167): require('/Users/afsari/P...')
+#8 {main}
+
+============[Date]============
+[ 2025-10-07 18:28:23  UTC ] 
+==========[Response]==========
+ok:			False
+error_code:		400
+description:		Bad Request: query is too old and response timeout expired or query ID is invalid
+=========[Sent Data]==========
+[ref]
+ref.update_id= 119059886
+ref.callback_query.id= 8678905564769705092
+ref.callback_query.from.id= 2020715168
+ref.callback_query.from.is_bot= false
+ref.callback_query.from.first_name= Lila
+ref.callback_query.from.username= MetaaVerses
+ref.callback_query.from.language_code= en
+ref.callback_query.message.message_id= 343
+ref.callback_query.message.from.id= 8267056539
+ref.callback_query.message.from.is_bot= true
+ref.callback_query.message.from.first_name= English_With_Us
+ref.callback_query.message.from.username= English_Bot_With_Us_bot
+ref.callback_query.message.chat.id= 2020715168
+ref.callback_query.message.chat.first_name= Lila
+ref.callback_query.message.chat.username= MetaaVerses
+ref.callback_query.message.chat.type= private
+ref.callback_query.message.date= 1759861669
+ref.callback_query.message.text= 🔐 پنل مدیریت
+
+خوش آمدید ادمین! 👋
+یکی از گزینه‌های زیر را انتخاب کنید:
+ref.callback_query.message.entities.0.offset= 3
+ref.callback_query.message.entities.0.length= 10
+ref.callback_query.message.entities.0.type= bold
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.text= 📊 آمار ربات
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.callback_data= admin_stats
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.text= ➕ افزودن دسته‌بندی
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.callback_data= admin_add_category
+ref.callback_query.message.reply_markup.inline_keyboard.1.1.text= ➕ افزودن محصول
+ref.callback_query.message.reply_markup.inline_keyboard.1.1.callback_data= admin_add_product
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.text= ✏️ ویرایش محصول
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.callback_data= admin_edit_product
+ref.callback_query.message.reply_markup.inline_keyboard.2.1.text= 🗑️ حذف محصول
+ref.callback_query.message.reply_markup.inline_keyboard.2.1.callback_data= admin_delete_product
+ref.callback_query.message.reply_markup.inline_keyboard.3.0.text= 🏠 منوی اصلی
+ref.callback_query.message.reply_markup.inline_keyboard.3.0.callback_data= start
+ref.callback_query.chat_instance= 4392676828707811893
+ref.callback_query.data= admin_edit_product
+
+
+[ref]
+ref.callback_query_id= 8678905564769705092
+ref.text= 👌
+ref.show_alert= false
+
+
+============[Trace]===========
+#0 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(1862): TelegramErrorLogger::log(Array, Array)
+#1 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(124): Telegram->sendAPIRequest('https://api.tel...', Array)
+#2 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(598): Telegram->endpoint('answerCallbackQ...', Array)
+#3 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_handler.php(38): Telegram->answerCallbackQuery(Array)
+#4 /Users/afsari/PhpstormProjects/telegram_bot_php/index.php(28): require_once('/Users/afsari/P...')
+#5 /Applications/Herd.app/Contents/Resources/valet/server.php(167): require('/Users/afsari/P...')
+#6 {main}
+
+============[Date]============
+[ 2025-10-07 20:19:09  UTC ] 
+==========[Response]==========
+ok:			False
+error_code:		400
+description:		Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message
+=========[Sent Data]==========
+[ref]
+ref.update_id= 119059904
+ref.callback_query.id= 8678905561977157579
+ref.callback_query.from.id= 2020715168
+ref.callback_query.from.is_bot= false
+ref.callback_query.from.first_name= Lila
+ref.callback_query.from.username= MetaaVerses
+ref.callback_query.from.language_code= en
+ref.callback_query.message.message_id= 358
+ref.callback_query.message.from.id= 8267056539
+ref.callback_query.message.from.is_bot= true
+ref.callback_query.message.from.first_name= English_With_Us
+ref.callback_query.message.from.username= English_Bot_With_Us_bot
+ref.callback_query.message.chat.id= 2020715168
+ref.callback_query.message.chat.first_name= Lila
+ref.callback_query.message.chat.username= MetaaVerses
+ref.callback_query.message.chat.type= private
+ref.callback_query.message.date= 1759868337
+ref.callback_query.message.text= 🔐 پنل مدیریت
+
+خوش آمدید ادمین! 👋
+یکی از گزینه‌های زیر را انتخاب کنید:
+ref.callback_query.message.entities.0.offset= 3
+ref.callback_query.message.entities.0.length= 10
+ref.callback_query.message.entities.0.type= bold
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.text= 📊 آمار ربات
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.callback_data= admin_stats
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.text= ➕ افزودن دسته‌بندی
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.callback_data= admin_add_category
+ref.callback_query.message.reply_markup.inline_keyboard.1.1.text= ➕ افزودن محصول
+ref.callback_query.message.reply_markup.inline_keyboard.1.1.callback_data= admin_add_product
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.text= ✏️ ویرایش محصول
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.callback_data= admin_edit_product
+ref.callback_query.message.reply_markup.inline_keyboard.2.1.text= 🗑️ حذف محصول
+ref.callback_query.message.reply_markup.inline_keyboard.2.1.callback_data= admin_delete_product
+ref.callback_query.message.reply_markup.inline_keyboard.3.0.text= 🏠 منوی اصلی
+ref.callback_query.message.reply_markup.inline_keyboard.3.0.callback_data= start
+ref.callback_query.chat_instance= 4392676828707811893
+ref.callback_query.data= admin_stats
+
+
+[ref]
+ref.text= 📊 <b>آمار کلی ربات:</b>
+
+👤 تعداد کل کاربران: <b>4</b>
+📦 تعداد کل محصولات: <b>7</b>
+✅ سفارشات تکمیل شده: <b>3</b>
+
+ref.parse_mode= HTML
+ref.reply_markup= {"inline_keyboard":[[{"text":"\u0628\u0627\u0632\u06af\u0634\u062a \ud83d\udd19","callback_data":"admin_panel"}]]}
+ref.message_id= 358
+
+
+============[Trace]===========
+#0 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(1862): TelegramErrorLogger::log(Array, Array)
+#1 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(124): Telegram->sendAPIRequest('https://api.tel...', Array)
+#2 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(692): Telegram->endpoint('editMessageText', Array)
+#3 /Users/afsari/PhpstormProjects/telegram_bot_php/functions.php(77): Telegram->editMessageText(Array)
+#4 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_handler.php(71): sendMessage(2020715168, '\xF0\x9F\x93\x8A <b>\xD8\xA2\xD9\x85\xD8\xA7\xD8...', '{"inline_keyboa...', 358)
+#5 /Users/afsari/PhpstormProjects/telegram_bot_php/index.php(28): require_once('/Users/afsari/P...')
+#6 /Applications/Herd.app/Contents/Resources/valet/server.php(167): require('/Users/afsari/P...')
+#7 {main}
+
