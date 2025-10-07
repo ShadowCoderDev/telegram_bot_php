@@ -222,3 +222,51 @@
 [2025-10-07T20:30:44+00:00] STEP6_CREATED: product_id=15
 [2025-10-07T20:30:44+00:00] STEP6_STATE_DELETED: id=14
 [2025-10-07T20:30:48+00:00] STEP6_DONE
+[2025-10-07T21:03:18+00:00] CB_RECEIVED: chat=2020715168 data=admin_contact_buyer_8
+[2025-10-07T21:03:19+00:00] CB_HANDLED: contact_buyer oid=8 buyer=6082580726
+[2025-10-07T21:03:43+00:00] MSG_RECEIVED: chat=2020715168 text=خوبی این چیه فرستادی؟
+[2025-10-07T21:03:45+00:00] DIALOG_INFO: sent to buyer=6082580726 by admin=2020715168 order=8
+[2025-10-07T21:03:54+00:00] MSG_RECEIVED: chat=2020715168 type=message_id,from,chat,date,photo
+[2025-10-07T21:03:56+00:00] DIALOG_INFO: sent to buyer=6082580726 by admin=2020715168 order=8
+[2025-10-07T21:04:00+00:00] MSG_RECEIVED: chat=2020715168 text=آفرین
+[2025-10-07T21:04:02+00:00] DIALOG_INFO: sent to buyer=6082580726 by admin=2020715168 order=8
+[2025-10-07T21:04:05+00:00] CB_RECEIVED: chat=2020715168 data=admin_close_dialog_6082580726
+[2025-10-07T21:04:06+00:00] CB_HANDLED: close_dialog buyer=6082580726
+[2025-10-07T21:05:20+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T21:05:21+00:00] MSG_HANDLED: open admin panel
+[2025-10-07T21:06:04+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product
+[2025-10-07T21:06:05+00:00] CB_HANDLED: list edit_product
+[2025-10-07T21:06:11+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_select_15
+[2025-10-07T21:06:12+00:00] CB_HANDLED: showProductInfo view pid=15
+[2025-10-07T21:06:15+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_menu_15
+[2025-10-07T21:06:16+00:00] CB_HANDLED: open edit menu pid=15
+[2025-10-07T21:06:22+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_field_title_15
+[2025-10-07T21:06:23+00:00] CB_HANDLED: start edit field=title pid=15
+[2025-10-07T21:06:30+00:00] MSG_RECEIVED: chat=2020715168 text=تست ۳ ویرایش شده
+[2025-10-07T21:06:34+00:00] EDIT_DONE: field=title pid=15 value=تست ۳ ویرایش شده
+[2025-10-07T21:06:45+00:00] CB_RECEIVED: chat=2020715168 data=admin_panel
+[2025-10-07T21:06:46+00:00] CB_HANDLED: open_menu admin_panel
+[2025-10-07T21:06:50+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product
+[2025-10-07T21:06:51+00:00] CB_HANDLED: list edit_product
+[2025-10-07T21:06:54+00:00] CB_RECEIVED: chat=2020715168 data=admin_panel
+[2025-10-07T21:06:55+00:00] CB_HANDLED: open_menu admin_panel
+[2025-10-07T21:07:01+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product
+[2025-10-07T21:07:02+00:00] CB_HANDLED: list edit_product
+[2025-10-07T21:07:06+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_select_15
+[2025-10-07T21:07:07+00:00] CB_HANDLED: showProductInfo view pid=15
+[2025-10-07T21:07:10+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_menu_15
+[2025-10-07T21:07:11+00:00] CB_HANDLED: open edit menu pid=15
+[2025-10-07T21:07:14+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_toggle_status_15
+[2025-10-07T21:07:16+00:00] CB_HANDLED: toggle_status pid=15 -> disable
+[2025-10-07T21:08:29+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T21:08:30+00:00] MSG_HANDLED: open admin panel
+[2025-10-07T21:08:47+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product
+[2025-10-07T21:08:48+00:00] CB_HANDLED: list edit_product
+[2025-10-07T21:08:51+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_select_14
+[2025-10-07T21:08:52+00:00] CB_HANDLED: showProductInfo view pid=14
+[2025-10-07T21:08:55+00:00] CB_RECEIVED: chat=2020715168 data=admin_panel
+[2025-10-07T21:08:56+00:00] CB_HANDLED: open_menu admin_panel
+[2025-10-07T21:09:01+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product
+[2025-10-07T21:09:02+00:00] CB_HANDLED: list edit_product
+[2025-10-07T21:09:11+00:00] CB_RECEIVED: chat=2020715168 data=admin_panel
+[2025-10-07T21:09:12+00:00] CB_HANDLED: open_menu admin_panel

@@ -43,6 +43,22 @@ if (isset($update['callback_query']['id']) && is_object($telegram) && method_exi
 }
 
 /* ======================================================================
+   کمک‌تابع‌ها برای تشخیص نوع پیام (عکس/کپشن/voice/...) از $update
+   ====================================================================== */
+function extract_photo_from_update($update) {
+    // بزرگ‌ترین سایز عکس را برمی‌گرداند
+    if (!empty($update['message']['photo']) && is_array($update['message']['photo'])) {
+        $photos = $update['message']['photo'];
+        $largest = end($photos);
+        return $largest['file_id'] ?? null;
+    }
+    return null;
+}
+function extract_caption_from_update($update) {
+    return $update['message']['caption'] ?? null;
+}
+
+/* ======================================================================
    پردازش دکمه‌های شیشه‌ای (Callback Query)
    ====================================================================== */
 if ($callback_data) {
@@ -177,7 +193,7 @@ if ($callback_data) {
             query("CREATE", "admin_process_state", [
                 "admin_user_id" => $chat_id,
                 "process_name"  => "edit_product",
-                "step"          => $f, // رشته است
+                "step"          => $f, // ← رشته است و با اسکیما فعلی شما سازگار است (VARCHAR(32))
                 "step_data"     => json_encode(["product_id" => $pid], JSON_UNESCAPED_UNICODE)
             ]);
 
@@ -254,7 +270,7 @@ if ($callback_data) {
         exit;
     }
 
-    // مرحله ۶: انتخاب دسته هنگام افزودن محصول (INSERT با inventory=0 اگر نبود)
+    // مرحله ۶: انتخاب دسته هنگام افزودن محصول
     if (strpos($callback_data, 'admin_p_select_cat_') === 0) {
         $category_id = (int)str_replace('admin_p_select_cat_', '', $callback_data);
         log_tg("STEP6_BEGIN: cat={$category_id}");
@@ -321,6 +337,76 @@ if ($callback_data) {
         }
     }
 
+    /* =================== گفتگو ادمین با خریدار =================== */
+    // شروع گفتگو با خریدار: admin_contact_buyer_{order_id}
+    if (strpos($callback_data, 'admin_contact_buyer_') === 0) {
+        $oid = (int)str_replace('admin_contact_buyer_', '', $callback_data);
+
+        $order = query("SELECT", "orders", false, [["key"=>"id","condition"=>"=","value"=>$oid]]);
+        if (!$order) {
+            sendMessage($chat_id, "❌ سفارش یافت نشد.");
+            log_tg("CB_ERR: contact_buyer order not found oid={$oid}");
+            exit;
+        }
+
+        // 1) گرفتن chat_id خریدار
+        $buyer_chat_id = (int)($order->user_chat_id ?? 0);
+        if ($buyer_chat_id <= 0 && !empty($order->user_id)) {
+            // تلاش از جدول users (در صورت وجود)
+            $u = query("SELECT", "users", false, [["key"=>"id","condition"=>"=","value"=>$order->user_id]]);
+            $buyer_chat_id = (int)($u->chat_id ?? 0);
+        }
+        if ($buyer_chat_id <= 0) {
+            sendMessage($chat_id, "⚠️ chat_id مشتری در سفارش ذخیره نشده است.");
+            log_tg("CB_ERR: contact_buyer no chat_id oid={$oid}");
+            exit;
+        }
+
+        // 2) پاک‌سازی state قبلی
+        $stmt = $conn->prepare("DELETE FROM admin_process_state WHERE (admin_user_id=:a AND process_name='admin_msg_buyer') OR (admin_user_id=:b AND process_name='buyer_reply')");
+        $stmt->execute([':a' => $chat_id, ':b' => $buyer_chat_id]);
+
+        // 3) ساخت state برای ادمین (ارسال پیام)
+        query("CREATE", "admin_process_state", [
+            "admin_user_id" => $chat_id,
+            "process_name"  => "admin_msg_buyer",
+            "step"          => "await",
+            "step_data"     => json_encode([
+                "order_id"      => $oid,
+                "buyer_chat_id" => $buyer_chat_id
+            ], JSON_UNESCAPED_UNICODE)
+        ]);
+
+        // 4) ساخت state برای خریدار (پاسخ)
+        query("CREATE", "admin_process_state", [
+            "admin_user_id" => $buyer_chat_id,
+            "process_name"  => "buyer_reply",
+            "step"          => "await",
+            "step_data"     => json_encode([
+                "order_id"      => $oid,
+                "admin_chat_id" => $chat_id
+            ], JSON_UNESCAPED_UNICODE)
+        ]);
+
+        // 5) راهنمای ادمین
+        $kb = $telegram->buildInlineKeyBoard([
+            [ $telegram->buildInlineKeyBoardButton("🔚 پایان گفتگو", '', 'admin_close_dialog_' . $buyer_chat_id) ]
+        ]);
+        sendMessage($chat_id, "✍️ پیام‌تان را برای خریدار بفرستید.\nمی‌توانید <b>متن</b> یا <b>عکس با کپشن</b> ارسال کنید.\n(برای لغو /cancel)", $kb);
+        log_tg("CB_HANDLED: contact_buyer oid={$oid} buyer={$buyer_chat_id}");
+        exit;
+    }
+
+    // بستن گفتگو: admin_close_dialog_{buyer_chat_id}
+    if (strpos($callback_data, 'admin_close_dialog_') === 0) {
+        $bchat = (int)str_replace('admin_close_dialog_', '', $callback_data);
+        $stmt = $conn->prepare("DELETE FROM admin_process_state WHERE (admin_user_id=:a AND process_name='admin_msg_buyer') OR (admin_user_id=:b AND process_name='buyer_reply')");
+        $stmt->execute([':a' => $chat_id, ':b' => $bchat]);
+        sendMessage($chat_id, "🔒 گفتگو بسته شد.");
+        log_tg("CB_HANDLED: close_dialog buyer={$bchat}");
+        exit;
+    }
+
     // لغو عملیات
     if ($callback_data === 'admin_cancel_process') {
         $stmt = $conn->prepare("DELETE FROM admin_process_state WHERE admin_user_id = :cid");
@@ -340,8 +426,12 @@ if ($callback_data) {
 /* ======================================================================
    پردازش پیام متنی (یک‌بار)
    ====================================================================== */
-if ($text_message) {
-    log_tg("MSG_RECEIVED: chat={$chat_id} text=".mb_substr($text_message,0,64));
+if ($text_message || !empty($update['message'])) {
+    if ($text_message) {
+        log_tg("MSG_RECEIVED: chat={$chat_id} text=".mb_substr($text_message,0,64));
+    } else {
+        log_tg("MSG_RECEIVED: chat={$chat_id} type=".implode(',', array_keys($update['message'])));
+    }
 
     if ($text_message === '/cancel') {
         $stmt = $conn->prepare("DELETE FROM admin_process_state WHERE admin_user_id = :cid");
@@ -358,7 +448,7 @@ if ($text_message) {
         exit;
     }
 
-    // 🔧 نکته مهم: اینجا دیگر شرط step>0 نداریم
+    // 🔧 اینجا state بر اساس admin_user_id همان chat_id فعلی لود می‌شود
     $admin_state = query(
         "SELECT",
         "admin_process_state",
@@ -371,6 +461,8 @@ if ($text_message) {
     );
     if (!$admin_state) {
         log_tg("MSG_INFO: no active state");
+        // اگر هیچ state ای نبود، ولی ممکنه این پیام پاسخ خریدار باشد که state اش قبلا پاک شده؟
+        // اینجا می‌تونید رفتار آزاد داشته باشید. فعلاً خروج.
         exit;
     }
 
@@ -491,7 +583,7 @@ if ($text_message) {
             exit;
         }
 
-        $value = trim($text_message);
+        $value = isset($text_message) ? trim($text_message) : null;
 
         if ($field === 'price' || $field === 'inventory') {
             if (!is_numeric($value)) {
@@ -523,6 +615,84 @@ if ($text_message) {
         sendMessage($chat_id, "✅ مقدار <b>{$field}</b> محصول #{$pid} بروزرسانی شد.");
         showProductInfo($chat_id, $pid, 'view', $mesasge_id);
         log_tg("EDIT_DONE: field={$field} pid={$pid} value=".mb_substr((string)$value,0,60));
+        exit;
+    }
+
+    /* ----------------- گفتگو ادمین با خریدار ----------------- */
+    if ($process_name === 'admin_msg_buyer') {
+        $buyer_chat_id = (int)($step_data['buyer_chat_id'] ?? 0);
+        $order_id      = (int)($step_data['order_id'] ?? 0);
+
+        if ($buyer_chat_id <= 0) {
+            sendMessage($chat_id, "❌ گیرنده معتبر نیست.");
+            log_tg("DIALOG_ERR: admin_msg_buyer no buyer_chat_id");
+            exit;
+        }
+
+        // تشخیص عکس یا متن:
+        $photo_id = extract_photo_from_update($update);
+        $caption  = extract_caption_from_update($update);
+
+        if ($photo_id) {
+            $telegram->sendPhoto([
+                'chat_id'    => $buyer_chat_id,
+                'photo'      => $photo_id,
+                'caption'    => $caption ? "📣 پیام پشتیبانی:\n".$caption : "📣 پیام پشتیبانی",
+                'parse_mode' => 'HTML'
+            ]);
+        } elseif (!empty($text_message)) {
+            sendMessage(
+                $buyer_chat_id,
+                "📣 <b>پیام از پشتیبانی:</b>\n\n" . $text_message
+            );
+        } else {
+            sendMessage($chat_id, "⚠️ فقط متن یا عکس را بفرستید.");
+            log_tg("DIALOG_WARN: admin_msg_buyer unknown payload");
+            exit;
+        }
+
+        // دکمه پایان گفتگو
+        $kb = $telegram->buildInlineKeyBoard([
+            [ $telegram->buildInlineKeyBoardButton("🔚 پایان گفتگو", '', 'admin_close_dialog_' . $buyer_chat_id) ]
+        ]);
+        sendMessage($chat_id, "✅ پیام برای خریدار ارسال شد.", $kb);
+        log_tg("DIALOG_INFO: sent to buyer={$buyer_chat_id} by admin={$chat_id} order={$order_id}");
+        exit;
+    }
+
+    if ($process_name === 'buyer_reply') {
+        // این مسیر وقتی فعال است که پیام از سمت خریدار بیاید
+        $admin_id = (int)($step_data['admin_chat_id'] ?? 0);
+        $order_id = (int)($step_data['order_id'] ?? 0);
+
+        if ($admin_id <= 0) {
+            // اگر به هر دلیل admin مشخص نبود، state را پاک کنیم
+            $conn->prepare("DELETE FROM admin_process_state WHERE id = :id")->execute([':id' => $admin_state->id]);
+            log_tg("DIALOG_ERR: buyer_reply no admin_id");
+            exit;
+        }
+
+        $photo_id = extract_photo_from_update($update);
+        $caption  = extract_caption_from_update($update);
+
+        if ($photo_id) {
+            $telegram->sendPhoto([
+                'chat_id'    => $admin_id,
+                'photo'      => $photo_id,
+                'caption'    => "📥 پاسخ خریدار (Order #{$order_id}):\n".$caption,
+                'parse_mode' => 'HTML'
+            ]);
+        } elseif (!empty($text_message)) {
+            sendMessage($admin_id, "📥 <b>پاسخ خریدار</b> (Order #{$order_id}):\n\n".$text_message);
+        } else {
+            // نوع پیام ناشناخته؛ نادیده بگیر
+            log_tg("DIALOG_WARN: buyer_reply unknown payload");
+        }
+
+        // به خریدار هم اطلاع بدهیم که پیامش رسید (اختیاری)
+        // sendMessage($chat_id, "✅ پیام شما برای پشتیبانی ارسال شد.");
+
+        log_tg("DIALOG_INFO: buyer={$chat_id} -> admin={$admin_id} order={$order_id}");
         exit;
     }
 
