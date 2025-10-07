@@ -192,14 +192,28 @@ function query($action, $table, $fields = false, $wheres = false, $isfetchall = 
 }
 
 /* ============== کارت محصول با دکمه‌های qty و افزودن ============== */
+/* ============== کارت محصول با دکمه‌های qty و افزودن (نسخه اصلاح شده) ============== */
 function renderProductCard($chat_id, $product_id, $qty = 1, $mesasge_id = false) {
     global $telegram;
 
     $qty = max(1, min(99, intval($qty)));
     $product = query("SELECT", "products", false, [["key"=>"id","condition"=>"=","value"=>$product_id]]);
-    if (!$product) return sendMessage($chat_id, "❌ محصول یافت نشد.", false, $mesasge_id);
+    if (!$product) {
+        // اگر محصولی پیدا نشد، به جای خطا یک پیام مناسب به کاربر بده
+        $keyb = $telegram->buildInlineKeyBoard([
+            [ $telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'buy_product') ]
+        ]);
+        return sendMessage($chat_id, "❌ محصول مورد نظر یافت نشد یا حذف شده است.", $keyb, $mesasge_id);
+    }
 
-    $text  = "<b>▫️ محصول:</b> ✨ " . $product->title . " ✨\n\n";
+    // ۱. همیشه لینک عکس را به متن اضافه می‌کنیم (اگر وجود داشته باشد)
+    $text = "";
+    if (!empty($product->image_url)) {
+        // این ترفند باعث نمایش عکس در بالای متن می‌شود
+        $text .= "<a href='" . $product->image_url . "'>&#8203;</a>";
+    }
+
+    $text .= "<b>▫️ محصول:</b> ✨ " . $product->title . " ✨\n\n";
     $text .= "<b>💸 مبلغ واحد:</b> " . number_format($product->price) . " تومان\n";
     $text .= "<b>🔢 تعداد انتخابی:</b> " . $qty . "\n";
     $text .= "<b>💰 مبلغ این آیتم:</b> " . number_format($product->price * $qty) . " تومان\n\n";
@@ -213,17 +227,14 @@ function renderProductCard($chat_id, $product_id, $qty = 1, $mesasge_id = false)
             $telegram->buildInlineKeyBoardButton("➕", '', 'qty_plus_' . $product->id . '_' . $qty)
         ),
         array($telegram->buildInlineKeyBoardButton("افزودن به سبد خرید ✅", '', 'add_to_cart_' . $product->id . '_' . $qty)),
-        array($telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'buy_product')),
+        array($telegram->buildInlineKeyBoardButton("بازگشت به لیست 🔙", '', 'category_' . $product->category_id)),
     );
     $keyb = $telegram->buildInlineKeyBoard($option);
 
-    if (!empty($product->image_url)) {
-        if ($mesasge_id) return sendMessage($chat_id, $text, $keyb, $mesasge_id); // ادیت متن
-        return sendPhoto($chat_id, $product->image_url, $text, $keyb);             // بار اول با عکس
-    }
+    // ۲. شرط if ($mesasge_id) و تابع sendPhoto حذف شد
+    // ۳. همیشه از sendMessage برای ویرایش پیام استفاده می‌کنیم
     return sendMessage($chat_id, $text, $keyb, $mesasge_id);
 }
-
 /* ============== رندر سبد خرید ============== */
 function renderCart($chat_id, $mesasge_id = false) {
     global $telegram, $conn;
@@ -438,8 +449,10 @@ if (isset($resultTelegram['callback_query'])) {
     }
 
     // سفارشات من
-    if ($callback_data == 'my_orders') {
-        global $telegram;
+// سفارشات من (نسخه اصلاح شده)
+// سفارشات من (نسخه نهایی با نمایش کامل اطلاعات)
+    elseif ($callback_data == 'my_orders') {
+        global $telegram, $conn; // $conn را برای اجرای کوئری مستقیم اضافه می‌کنیم
         $user_detail = query("SELECT", "users", false, [["key"=>"chat_id","condition"=>"=","value"=>$chat_id]]);
         $orders = query("SELECT", "orders", false, [
             ["key"=>"user_id","condition"=>"=","value"=>$user_detail->id],
@@ -454,11 +467,36 @@ if (isset($resultTelegram['callback_query'])) {
         } else {
             $text = "📑 <b>5 سفارش آخر شما:</b>\n\n";
             foreach ($orders as $order) {
+                // ۱. محاسبه مبلغ کل برای هر سفارش
+                $sql = "SELECT SUM(products.price * orders_item.quantity) as total
+                    FROM `orders_item`
+                    LEFT JOIN products ON orders_item.product_id = products.id
+                    WHERE orders_item.order_id=:oid";
+                $stmt = $conn->prepare($sql);
+                $stmt->bindValue(':oid', $order->id, PDO::PARAM_INT);
+                $stmt->execute();
+                $result = $stmt->fetch(PDO::FETCH_OBJ);
+                $total_price = $result && $result->total ? intval($result->total) : 0;
+
+                // ۲. گرفتن اطلاعات تکمیلی سفارش (نام، آدرس و...)
                 $order_details = query("SELECT", "order_details", false, [["key"=>"order_id","condition"=>"=","value"=>$order->id]]);
-                $status_text = ($order->status=='payed' ? '✅ پرداخت شده' : ($order->status=='reject' ? '❌ رد شده' : ($order->status=='cancel' ? '🚫 لغو شده' : $order->status)));
+
+                $status_text = 'نامشخص';
+                if($order->status == 'payed') $status_text = '✅ پرداخت شده - در انتظار تایید';
+                if($order->status == 'reject') $status_text = '❌ رد شده';
+                if($order->status == 'cancel') $status_text = '🚫 لغو شده';
+
                 $text .= "🆔 <b>سفارش #{$order->id}</b>\n";
-                if ($order_details) $text .= "👤 " . $order_details->first_name . " " . $order_details->last_name . "\n";
-                $text .= "💵 جمع کل: " . number_format(0) . " تومان\n"; // در صورت نیاز محاسبهٔ واقعی اضافه شود
+                if ($order_details) {
+                    $text .= "👤 " . $order_details->first_name . " " . $order_details->last_name . "\n";
+                    // --- شروع خطوط جدید ---
+                    $text .= "📍 آدرس: " . $order_details->address . "\n";
+                    $text .= "📱 تلفن: " . $order_details->phone_number . "\n";
+                    // --- پایان خطوط جدید ---
+                }
+
+                // ۳. نمایش مبلغ محاسبه شده به جای صفر
+                $text .= "💵 جمع کل: " . number_format($total_price) . " تومان\n";
                 $text .= "📌 وضعیت: " . $status_text . "\n";
                 $text .= "────\n\n";
             }
@@ -467,7 +505,6 @@ if (isset($resultTelegram['callback_query'])) {
         }
         exit;
     }
-
     // راهنما
     if ($callback_data == 'help') {
         global $telegram;
