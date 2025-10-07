@@ -1,0 +1,21 @@
+{
+  "update_id": 119059466,
+  "message": {
+    "message_id": 27,
+    "from": {
+      "id": 2020715168,
+      "is_bot": false,
+      "first_name": "Lila",
+      "username": "MetaaVerses",
+      "language_code": "en"
+    },
+    "chat": {
+      "id": 2020715168,
+      "first_name": "Lila",
+      "username": "MetaaVerses",
+      "type": "private"
+    },
+    "date": 1759664712,
+    "text": "الان اوکی شده؟؟"
+  }
+}
