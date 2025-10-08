@@ -113,27 +113,25 @@ if ($callback_data) {
         exit;
     }
 
-    // Check if the callback is for editing a setting
-    if (strpos($callback_data, 'admin_edit_setting_') === 0) {
-        $setting_key = str_replace('admin_edit_setting_', '', $callback_data);
-        
-        $prompts = [
-            'help_text' => "لطفاً متن جدید **راهنما** را ارسال کنید:",
-            'support_text' => "لطفاً متن جدید **پشتیبانی** را ارسال کنید:",
-            'bank_info' => "لطفاً اطلاعات جدید **شماره کارت** را ارسال کنید:",
-        ];
+    $settings_map = [
+        'admin_edit_help'    => ['key' => 'help_text',    'prompt' => 'لطفاً متن جدید **راهنما** را ارسال کنید:'],
+        'admin_edit_support' => ['key' => 'support_text', 'prompt' => 'لطفاً متن جدید **پشتیبانی** را ارسال کنید:'],
+        'admin_edit_bank'    => ['key' => 'bank_info',    'prompt' => 'لطفاً اطلاعات جدید **شماره کارت** را ارسال کنید:'],
+    ];
 
-        if (isset($prompts[$setting_key])) {
-            // Start the process state
-            query("CREATE", "admin_process_state", [
-                "admin_user_id" => $chat_id,
-                "process_name"  => "edit_setting",
-                "step"          => "await_value",
-                "step_data"     => json_encode(["key" => $setting_key])
-            ]);
-            
-            sendMessage($chat_id, $prompts[$setting_key] . "\n\n(برای لغو /cancel)");
-        }
+    if (isset($settings_map[$callback_data])) {
+        $setting_info = $settings_map[$callback_data];
+        $setting_key_to_edit = $setting_info['key'];
+        $prompt_message = $setting_info['prompt'];
+        
+        query("CREATE", "admin_process_state", [
+            "admin_user_id" => $chat_id,
+            "process_name"  => "edit_setting",
+            "step"          => "await_value",
+            "step_data"     => json_encode(["key" => $setting_key_to_edit]) // کلید ثابت را ذخیره می‌کنیم
+        ]);
+        
+        sendMessage($chat_id, $prompt_message . "\n\n(برای لغو /cancel)");
         exit;
     }
 
@@ -618,6 +616,24 @@ if ($text_message || !empty($update['message'])) {
     }
 
 
+
+
+    // لود state برای chat_id فعلی
+    $admin_state = query(
+        "SELECT",
+        "admin_process_state",
+        false,
+        [
+            ["key" => "admin_user_id", "condition" => "=", "value" => $chat_id]
+        ],
+        false,
+        "id DESC"
+    );
+    if (!$admin_state) {
+        log_tg("MSG_INFO: no active state");
+        exit;
+    }
+
     if ($admin_state->process_name === 'edit_setting') {
         global $conn;
         
@@ -636,22 +652,6 @@ if ($text_message || !empty($update['message'])) {
 
         sendMessage($chat_id, "✅ تنظیمات با موفقیت به‌روزرسانی شد.");
         sendAdminSettingsMenu($chat_id);
-        exit;
-    }
-
-    // لود state برای chat_id فعلی
-    $admin_state = query(
-        "SELECT",
-        "admin_process_state",
-        false,
-        [
-            ["key" => "admin_user_id", "condition" => "=", "value" => $chat_id]
-        ],
-        false,
-        "id DESC"
-    );
-    if (!$admin_state) {
-        log_tg("MSG_INFO: no active state");
         exit;
     }
 
