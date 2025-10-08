@@ -113,7 +113,7 @@ function notifyAdminOfNewOrder($order_id) {
     $text .= "<b>تلفن:</b> {$order_details->phone_number}\n";
     $text .= "─────────────────\n<b>محصولات سفارش:</b>\n\n";
 
-    $sql = "SELECT oi.quantity, p.title, p.price FROM `orders_item` oi JOIN `products` p ON oi.product_id = p.id WHERE oi.order_id=:oid";
+    $sql = "SELECT quantity, price, product_title FROM `orders_item` WHERE order_id=:oid";
     $stmt = $conn->prepare($sql);
     $stmt->bindValue(':oid', $order_id, PDO::PARAM_INT);
     $stmt->execute();
@@ -121,7 +121,7 @@ function notifyAdminOfNewOrder($order_id) {
 
     $total_price = 0;
     foreach ($items as $item) {
-        $text .= "📦 {$item->title} (<b>{$item->quantity} عدد</b>)\n";
+        $text .= "📦 {$item->product_title} (<b>{$item->quantity} عدد</b>)\n";
         $total_price += $item->quantity * $item->price;
     }
 
@@ -239,6 +239,9 @@ function sendAdminRootMenu($chat_id, $mesasge_id = false) {
 
         [ $telegram->buildInlineKeyBoardButton("🗑️ حذف دسته بندی", '', 'admin_delete_category'),
           $telegram->buildInlineKeyBoardButton("🗑️ حذف محصول", '', 'admin_delete_product') ],
+
+        [ $telegram->buildInlineKeyBoardButton("⚙️ تنظیمات ربات", '', 'admin_settings_menu') ],
+
     ]);
 
     // $kb = $telegram->buildInlineKeyBoard([
@@ -341,7 +344,7 @@ function showOrderDetailsToAdmin($chat_id, $order_id, $mesasge_id=false) {
         return;
     }
     $details = query("SELECT","order_details",false,[["key"=>"order_id","condition"=>"=","value"=>$order_id]]);
-    $sql = "SELECT oi.quantity, p.title, p.price FROM orders_item oi JOIN products p ON p.id=oi.product_id WHERE oi.order_id=:oid";
+    $sql = "SELECT quantity, price, product_title FROM orders_item WHERE order_id=:oid";
     $st = $conn->prepare($sql); $st->execute([':oid'=>$order_id]); $items = $st->fetchAll(PDO::FETCH_OBJ);
 
     $txt = "🧾 <b>جزئیات سفارش</b> (" . ($order->trackId ?? "#".$order->id) . ")\n"; 
@@ -352,8 +355,10 @@ function showOrderDetailsToAdmin($chat_id, $order_id, $mesasge_id=false) {
     $txt .= "──────────────\n<b>آیتم‌ها:</b>\n";
     $total=0;
     foreach ($items as $it){
-        $line = "• {$it->title} × {$it->quantity} = ".number_format($it->price*$it->quantity)." ت\n";
-        $txt .= $line; $total += $it->price*$it->quantity;
+        $line_total = $it->price * $it->quantity;
+        $line = "• {$it->product_title} × {$it->quantity} = ".number_format($line_total)." ت\n";
+        $txt .= $line; 
+        $total += $line_total;
     }
     $txt .= "──────────────\n💰 جمع کل: <b>".number_format($total)." تومان</b>";
 
@@ -368,7 +373,7 @@ function showOrderDetailsToAdmin($chat_id, $order_id, $mesasge_id=false) {
 
     // ارسال به خریدار
     if ($order->status!=='sending') {
-        $opt[] = [ $telegram->buildInlineKeyBoardButton("📤 ارسال به خریدار", '', 'admin_order_send_'.$order->id) ];
+        $opt[] = [ $telegram->buildInlineKeyBoardButton("📤 ارسال محصول به مشتری", '', 'admin_order_send_'.$order->id) ];
     }
 
     // پیام به خریدار (اگر chat_id داریم)
@@ -397,4 +402,20 @@ function listCategoriesManage($chat_id, $mesasge_id=false) {
     $opt[] = [ $telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'admin_root') ];
     $kb = $telegram->buildInlineKeyBoard($opt);
     sendMessage($chat_id, "📂 <b>مدیریت دسته‌بندی‌ها</b>:", $kb, $mesasge_id);
+}
+
+// admin_functions.php
+
+function sendAdminSettingsMenu($chat_id, $mesasge_id = false) {
+    global $telegram;
+    
+    $kb = $telegram->buildInlineKeyBoard([
+        [ $telegram->buildInlineKeyBoardButton("📝 ویرایش متن راهنما", '', 'admin_edit_setting_help_text') ],
+        [ $telegram->buildInlineKeyBoardButton("🗣️ ویرایش متن پشتیبانی", '', 'admin_edit_setting_support_text') ],
+        [ $telegram->buildInlineKeyBoardButton("💳 ویرایش اطلاعات کارت", '', 'admin_edit_setting_bank_info') ],
+        [ $telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'admin_root') ],
+    ]);
+    
+    $txt = "⚙️ **تنظیمات ربات**\n\nکدام بخش را می‌خواهید ویرایش کنید؟";
+    sendMessage($chat_id, $txt, $kb, $mesasge_id);
 }

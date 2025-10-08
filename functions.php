@@ -317,3 +317,21 @@ function generateTrackId($length = 5) {
 
     return $newTrackId;
 }
+
+/**
+ * Snapshots the current product details (price, title) into the order_item table.
+ * This locks the order details at the moment of payment.
+ * @param int $order_id The ID of the order to snapshot.
+ */
+function snapshotOrderDetails($order_id) {
+    global $conn;
+    // این کوئری با یک حرکت تمام آیتم‌های سفارش را آپدیت می‌کند
+    $sql = "UPDATE orders_item oi
+            JOIN products p ON oi.product_id = p.id
+            SET
+                oi.price = p.price,
+                oi.product_title = p.title
+            WHERE oi.order_id = :order_id AND oi.price IS NULL";
+    $stmt = $conn->prepare($sql);
+    $stmt->execute([':order_id' => $order_id]);
+}
