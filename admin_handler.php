@@ -31,7 +31,26 @@ if (is_object($telegram) && method_exists($telegram, 'Text')) {
     $text_message = $update['message']['text'] ?? null;
 }
 
-// بستن لودینگ کال‌بک (UX بهتر)
+/* ---------- کمک‌توابع کیبورد ---------- */
+function send_quick_admin_reply_keyboard($chat_id) {
+    // یک کیبورد همیشگی با دکمه /admin
+    global $telegram;
+    if (!method_exists($telegram, 'buildKeyBoard')) return;
+    $rkey = $telegram->buildKeyBoard(
+        [[ "/admin" ]],
+        $onetime=false,
+        $resize=true,
+        $selective=false
+    );
+    sendMessage($chat_id, "می‌تونی هر زمان خواستی از دکمه /admin پایین استفاده کنی.", $rkey);
+}
+
+function build_back_to_admin_panel_inline() {
+    global $telegram;
+    return $telegram->buildInlineKeyBoard([[ $telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'admin_root') ]]);
+}
+
+/* --- بستن لودینگ کال‌بک برای UX بهتر --- */
 if (isset($update['callback_query']['id']) && is_object($telegram) && method_exists($telegram, 'answerCallbackQuery')) {
     try {
         $telegram->answerCallbackQuery([
@@ -46,7 +65,6 @@ if (isset($update['callback_query']['id']) && is_object($telegram) && method_exi
    کمک‌تابع‌ها برای تشخیص نوع پیام (عکس/کپشن/voice/...) از $update
    ====================================================================== */
 function extract_photo_from_update($update) {
-    // بزرگ‌ترین سایز عکس را برمی‌گرداند
     if (!empty($update['message']['photo']) && is_array($update['message']['photo'])) {
         $photos = $update['message']['photo'];
         $largest = end($photos);
@@ -59,15 +77,140 @@ function extract_caption_from_update($update) {
 }
 
 /* ======================================================================
+   منوی روت ادمین (Inline) — مستقل از admin_functions.php
+   ====================================================================== */
+function sendAdminRootMenu($chat_id, $mesasge_id = false) {
+    global $telegram;
+    $kb = $telegram->buildInlineKeyBoard([
+        [ $telegram->buildInlineKeyBoardButton("📊 آمار", '', 'admin_stats'),
+          $telegram->buildInlineKeyBoardButton("➕ افزودن دسته‌بندی", '', 'admin_add_category') ],
+        [ $telegram->buildInlineKeyBoardButton("➕ افزودن محصول", '', 'admin_add_product') ],
+        [ $telegram->buildInlineKeyBoardButton("✏️ ویرایش محصول (همه)", '', 'admin_edit_product_all'),
+          $telegram->buildInlineKeyBoardButton("🗑️ حذف محصول", '', 'admin_delete_product') ],
+        [ $telegram->buildInlineKeyBoardButton("📂 مدیریت دسته‌بندی‌ها", '', 'admin_manage_categories') ],
+        [ $telegram->buildInlineKeyBoardButton("🧾 سفارشات پرداخت‌شده", '', 'admin_orders_paid') ],
+        [ $telegram->buildInlineKeyBoardButton("🏠 منوی اصلی", '', 'start') ],
+    ]);
+    $txt = "🔐 <b>پنل مدیریت</b>\n\nیکی از گزینه‌ها را انتخاب کن:";
+    sendMessage($chat_id, $txt, $kb, $mesasge_id);
+}
+
+/* ======================================================================
+   لیست‌سازها داخل همین فایل (برای دور زدن محدودیت «فقط فعال‌ها»)
+   ====================================================================== */
+function listAllProductsForEdit($chat_id, $mesasge_id=false) {
+    global $telegram;
+    $rows = query("SELECT", "products", false, false, true, "id DESC"); // همه، بدون فیلتر وضعیت
+    if (!$rows || !count($rows)) {
+        sendMessage($chat_id, "❌ محصولی وجود ندارد.", build_back_to_admin_panel_inline(), $mesasge_id);
+        return;
+    }
+    $opt = [];
+    foreach ($rows as $p) {
+        $status = ($p->status==='enable'?'✅':'⛔');
+        $btn = $status." ".mb_substr($p->title,0,32)." (ID:".$p->id.")";
+        $opt[] = [ $telegram->buildInlineKeyBoardButton($btn, '', 'admin_edit_select_'.$p->id) ];
+    }
+    $opt[] = [ $telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'admin_root') ];
+    $kb = $telegram->buildInlineKeyBoard($opt);
+    sendMessage($chat_id, "✏️ <b>ویرایش محصول</b> — لیست همه‌ی محصولات:", $kb, $mesasge_id);
+}
+
+function listPaidOrders($chat_id, $mesasge_id=false) {
+    global $telegram, $conn;
+    $sql = "SELECT id, user_id, user_chat_id, status, created_at FROM orders WHERE status='payed' ORDER BY id DESC LIMIT 100";
+    $stm = $conn->query($sql);
+    $rows = $stm ? $stm->fetchAll(PDO::FETCH_OBJ) : [];
+    if (!$rows) {
+        sendMessage($chat_id, "هیچ سفارش پرداخت‌شده‌ای پیدا نشد.", build_back_to_admin_panel_inline(), $mesasge_id);
+        return;
+    }
+    $opt=[];
+    foreach ($rows as $o) {
+        $cap = "🧾 #".$o->id." — ".($o->status)." — ".mb_substr((string)$o->created_at,0,19);
+        $opt[] = [ $telegram->buildInlineKeyBoardButton($cap, '', 'admin_order_view_'.$o->id) ];
+    }
+    $opt[] = [ $telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'admin_root') ];
+    $kb = $telegram->buildInlineKeyBoard($opt);
+    sendMessage($chat_id, "<b>سفارشات پرداخت‌شده</b> (حداکثر ۱۰۰ مورد اخیر):", $kb, $mesasge_id);
+}
+
+function showOrderDetailsToAdmin($chat_id, $order_id, $mesasge_id=false) {
+    global $telegram, $conn;
+    $order = query("SELECT","orders",false,[["key"=>"id","condition"=>"=","value"=>$order_id]]);
+    if (!$order) {
+        sendMessage($chat_id, "❌ سفارش یافت نشد.", build_back_to_admin_panel_inline(), $mesasge_id);
+        return;
+    }
+    $details = query("SELECT","order_details",false,[["key"=>"order_id","condition"=>"=","value"=>$order_id]]);
+    $sql = "SELECT oi.quantity, p.title, p.price FROM orders_item oi JOIN products p ON p.id=oi.product_id WHERE oi.order_id=:oid";
+    $st = $conn->prepare($sql); $st->execute([':oid'=>$order_id]); $items = $st->fetchAll(PDO::FETCH_OBJ);
+
+    $txt = "🧾 <b>سفارش #{$order->id}</b>\n";
+    if ($details) {
+        $txt .= "👤 {$details->first_name} {$details->last_name}\n📍 {$details->address}\n📞 {$details->phone_number}\n";
+    }
+    $txt .= "وضعیت فعلی: <b>{$order->status}</b>\n";
+    $txt .= "──────────────\n<b>آیتم‌ها:</b>\n";
+    $total=0;
+    foreach ($items as $it){
+        $line = "• {$it->title} × {$it->quantity} = ".number_format($it->price*$it->quantity)." ت\n";
+        $txt .= $line; $total += $it->price*$it->quantity;
+    }
+    $txt .= "──────────────\n💰 جمع کل: <b>".number_format($total)." تومان</b>";
+
+    $opt = [];
+    // تایید/رد برای ادمین
+    if ($order->status!=='approved') {
+        $opt[] = [ $telegram->buildInlineKeyBoardButton("✅ تایید سفارش", '', 'admin_order_approve_'.$order->id) ];
+    }
+    if ($order->status!=='rejected') {
+        $opt[] = [ $telegram->buildInlineKeyBoardButton("❌ رد سفارش", '', 'admin_order_reject_'.$order->id) ];
+    }
+    // پیام به خریدار (اگر chat_id داریم)
+    $opt[] = [ $telegram->buildInlineKeyBoardButton("✉️ پیام به خریدار", '', 'admin_contact_buyer_'.$order->id) ];
+    $opt[] = [ $telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'admin_orders_paid') ];
+    $kb = $telegram->buildInlineKeyBoard($opt);
+    sendMessage($chat_id, $txt, $kb, $mesasge_id);
+}
+
+function listCategoriesManage($chat_id, $mesasge_id=false) {
+    global $telegram;
+    $cats = query("SELECT","categories",false,false,true,"id DESC");
+    if (!$cats || !count($cats)) {
+        sendMessage($chat_id, "❌ دسته‌بندی‌ای وجود ندارد.", build_back_to_admin_panel_inline(), $mesasge_id);
+        return;
+    }
+    $opt=[];
+    foreach ($cats as $c){
+        $status = ($c->status==='enable' ? '✅' : '⛔');
+        $name = (($c->icon ?? '')?:'📂').' '.$c->name;
+        $opt[] = [ 
+            $telegram->buildInlineKeyBoardButton($status." ".$name, '', 'noop'),
+            $telegram->buildInlineKeyBoardButton(($c->status==='enable'?'غیرفعال‌سازی ⛔':'فعال‌سازی ✅'), '', 'admin_toggle_category_'.$c->id)
+        ];
+    }
+    $opt[] = [ $telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'admin_root') ];
+    $kb = $telegram->buildInlineKeyBoard($opt);
+    sendMessage($chat_id, "📂 <b>مدیریت دسته‌بندی‌ها</b>:", $kb, $mesasge_id);
+}
+
+/* ======================================================================
    پردازش دکمه‌های شیشه‌ای (Callback Query)
    ====================================================================== */
 if ($callback_data) {
     log_tg("CB_RECEIVED: chat={$chat_id} data={$callback_data}");
 
-    // ناوبری اصلی
+    // منوی روت داخلی ما
+    if ($callback_data === 'admin_root') {
+        sendAdminRootMenu($chat_id, $mesasge_id);
+        exit;
+    }
+
+    // ناوبری اصلی (سازگاری با قبل)
     if ($callback_data === 'admin_panel' || $callback_data === 'start') {
         if ($callback_data === 'start') sendMainKeyboardMenu($chat_id, $mesasge_id);
-        else sendAdminPanelMenu($chat_id, $mesasge_id);
+        else sendAdminRootMenu($chat_id, $mesasge_id); // به‌جای منوی قدیمی
         log_tg("CB_HANDLED: open_menu {$callback_data}");
         exit;
     }
@@ -79,11 +222,11 @@ if ($callback_data) {
         $completed_orders = (int)$conn->query("SELECT count(*) FROM orders WHERE status = 'payed'")->fetchColumn();
 
         $stats_text  = "📊 <b>آمار کلی ربات:</b>\n\n";
-        $stats_text .= "👤 تعداد کل کاربران: <b>{$users_count}</b>\n";
-        $stats_text .= "📦 تعداد کل محصولات: <b>{$products_count}</b>\n";
-        $stats_text .= "✅ سفارشات تکمیل شده: <b>{$completed_orders}</b>\n";
+        $stats_text .= "👤 کاربران: <b>{$users_count}</b>\n";
+        $stats_text .= "📦 محصولات: <b>{$products_count}</b>\n";
+        $stats_text .= "✅ سفارشات پرداخت‌شده: <b>{$completed_orders}</b>\n";
 
-        $keyb = $telegram->buildInlineKeyBoard([[ $telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'admin_panel') ]]);
+        $keyb = build_back_to_admin_panel_inline();
         sendMessage($chat_id, $stats_text, $keyb, $mesasge_id);
         log_tg("CB_HANDLED: admin_stats");
         exit;
@@ -119,19 +262,20 @@ if ($callback_data) {
         exit;
     }
 
-    // لیست ویرایش/حذف
-    if ($callback_data === 'admin_edit_product') {
-        sendAdminProductList($chat_id, 'edit_product', $mesasge_id);
-        log_tg("CB_HANDLED: list edit_product");
-        exit;
-    }
+    // لیست ویرایش/حذف قدیمی (حذف را همان قبلی می‌گذاریم)
     if ($callback_data === 'admin_delete_product') {
-        sendAdminProductList($chat_id, 'delete_product', $mesasge_id);
+        sendAdminProductList($chat_id, 'delete_product', $mesasge_id); // از فایل قبلی‌ات
         log_tg("CB_HANDLED: list delete_product");
         exit;
     }
 
-    // نمایش محصول برای ویرایش
+    // لیست جدید: «همه‌ی محصولات»
+    if ($callback_data === 'admin_edit_product_all') {
+        listAllProductsForEdit($chat_id, $mesasge_id);
+        exit;
+    }
+
+    // نمایش محصول برای ویرایش (سازگار با قدیمی)
     if (strpos($callback_data, 'admin_edit_select_') === 0) {
         $pid = (int)str_replace('admin_edit_select_', '', $callback_data);
         showProductInfo($chat_id, $pid, 'view', $mesasge_id);
@@ -153,8 +297,7 @@ if ($callback_data) {
         query("UPDATE", "products", ["status" => "disable"], [
             ["key"=>"id","condition"=>"=","value"=>$pid]
         ]);
-        $keyb = $telegram->buildInlineKeyBoard([[ $telegram->buildInlineKeyBoardButton("بازگشت به پنل 🔙", '', 'admin_panel') ]]);
-        sendMessage($chat_id, "✅ محصول با شناسه <b>{$pid}</b> غیرفعال شد.", $keyb, $mesasge_id);
+        sendMessage($chat_id, "✅ محصول <b>#{$pid}</b> غیرفعال شد.", build_back_to_admin_panel_inline(), $mesasge_id);
         log_tg("CB_HANDLED: delete_confirm pid={$pid}");
         exit;
     }
@@ -172,7 +315,7 @@ if ($callback_data) {
               $telegram->buildInlineKeyBoardButton("📦 تغییر موجودی", '', 'admin_edit_field_inventory_' . $pid) ],
             [ $telegram->buildInlineKeyBoardButton("🔁 تغییر دسته", '', 'admin_edit_change_cat_' . $pid),
               $telegram->buildInlineKeyBoardButton("⏯ تغییر وضعیت", '', 'admin_edit_toggle_status_' . $pid) ],
-            [ $telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'admin_edit_select_' . $pid) ],
+            [ $telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'admin_edit_product_all') ],
         ];
         $keyb = $telegram->buildInlineKeyBoard($option);
         sendMessage($chat_id, "یک گزینه برای ویرایش محصول #{$pid} انتخاب کنید:", $keyb, $mesasge_id);
@@ -193,7 +336,7 @@ if ($callback_data) {
             query("CREATE", "admin_process_state", [
                 "admin_user_id" => $chat_id,
                 "process_name"  => "edit_product",
-                "step"          => $f, // ← رشته است و با اسکیما فعلی شما سازگار است (VARCHAR(32))
+                "step"          => $f,
                 "step_data"     => json_encode(["product_id" => $pid], JSON_UNESCAPED_UNICODE)
             ]);
 
@@ -217,8 +360,7 @@ if ($callback_data) {
 
         $categories = query("SELECT", "categories", false, [["key"=>"status","condition"=>"=","value"=>"enable"]], true);
         if (!$categories || count($categories) === 0) {
-            sendMessage($chat_id, "❌ هیچ دسته فعالی وجود ندارد.");
-            sendAdminPanelMenu($chat_id);
+            sendMessage($chat_id, "❌ هیچ دسته فعالی وجود ندارد.", build_back_to_admin_panel_inline());
             log_tg("CB_ERR: no categories to change pid={$pid}");
             exit;
         }
@@ -236,35 +378,34 @@ if ($callback_data) {
 
     // ست‌کردن دسته جدید
     if (strpos($callback_data, 'admin_edit_set_cat_') === 0) {
-        // الگو: admin_edit_set_cat_{pid}_{catid}
         $parts = explode('_', $callback_data);
         $pid   = (int)($parts[4] ?? 0);
         $catid = (int)($parts[5] ?? 0);
 
         if ($pid > 0 && $catid > 0) {
             query("UPDATE", "products", ["category_id" => $catid], [["key"=>"id","condition"=>"=","value"=>$pid]]);
-            sendMessage($chat_id, "✅ دسته‌ی محصول #{$pid} تغییر کرد به {$catid}.");
+            sendMessage($chat_id, "✅ دسته‌ی محصول #{$pid} تغییر کرد به {$catid}.", build_back_to_admin_panel_inline());
             showProductInfo($chat_id, $pid, 'view', $mesasge_id);
             log_tg("CB_HANDLED: set_cat pid={$pid} cat={$catid}");
             exit;
         }
-        sendMessage($chat_id, "❌ داده‌ی نامعتبر برای تغییر دسته.");
+        sendMessage($chat_id, "❌ داده‌ی نامعتبر برای تغییر دسته.", build_back_to_admin_panel_inline());
         log_tg("CB_ERR: set_cat invalid data");
         exit;
     }
 
-    // تغییر وضعیت enable/disable
+    // تغییر وضعیت enable/disable (محصول)
     if (strpos($callback_data, 'admin_edit_toggle_status_') === 0) {
         $pid = (int)str_replace('admin_edit_toggle_status_', '', $callback_data);
         $p = query("SELECT", "products", false, [["key"=>"id","condition"=>"=","value"=>$pid]]);
         if (!$p) {
-            sendMessage($chat_id, "❌ محصول یافت نشد.");
+            sendMessage($chat_id, "❌ محصول یافت نشد.", build_back_to_admin_panel_inline());
             log_tg("CB_ERR: toggle_status product not found pid={$pid}");
             exit;
         }
         $new_status = ($p->status === 'enable') ? 'disable' : 'enable';
         query("UPDATE", "products", ["status" => $new_status], [["key"=>"id","condition"=>"=","value"=>$pid]]);
-        sendMessage($chat_id, "✅ وضعیت محصول #{$pid} به <b>{$new_status}</b> تغییر کرد.");
+        sendMessage($chat_id, "✅ وضعیت محصول #{$pid} به <b>{$new_status}</b> تغییر کرد.", build_back_to_admin_panel_inline());
         showProductInfo($chat_id, $pid, 'view', $mesasge_id);
         log_tg("CB_HANDLED: toggle_status pid={$pid} -> {$new_status}");
         exit;
@@ -283,12 +424,9 @@ if ($callback_data) {
 
             if (!$admin_state) {
                 log_tg("STEP6_ERR: no admin_state for chat={$chat_id}");
-                sendMessage($chat_id, "❌ فرایند افزودن محصول یافت نشد. دوباره شروع کنید.");
-                sendAdminPanelMenu($chat_id);
+                sendMessage($chat_id, "❌ فرایند افزودن محصول یافت نشد. دوباره شروع کنید.", build_back_to_admin_panel_inline());
                 exit;
             }
-
-            log_tg("STEP6_STATE: id={$admin_state->id} step={$admin_state->step} pname={$admin_state->process_name}");
 
             $step_data = json_decode($admin_state->step_data ?? "{}", true) ?: [];
             $title  = trim($step_data['title'] ?? '');
@@ -297,8 +435,6 @@ if ($callback_data) {
             $author = trim($step_data['author'] ?? '');
             $image  = trim($step_data['image_url'] ?? '');
             $inventory = isset($step_data['inventory']) ? (int)$step_data['inventory'] : 0;
-
-            log_tg("STEP6_DATA: title=".mb_substr($title,0,40)." price={$price} author=".mb_substr($author,0,40)." image=".mb_substr($image,0,60)." inv={$inventory}");
 
             $new_id = query("CREATE", "products", [
                 'title'       => $title,
@@ -311,30 +447,62 @@ if ($callback_data) {
                 'status'      => 'enable'
             ]);
 
-            log_tg("STEP6_CREATED: product_id={$new_id}");
-
             $stmt = $conn->prepare("DELETE FROM admin_process_state WHERE id = :id");
             $stmt->execute([':id' => $admin_state->id]);
-            log_tg("STEP6_STATE_DELETED: id={$admin_state->id}");
 
-            sendMessage($chat_id, "✅ محصول '<b>" . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . "</b>' با موفقیت اضافه شد.");
-            sendAdminPanelMenu($chat_id);
-            log_tg("STEP6_DONE");
+            sendMessage($chat_id, "✅ محصول '<b>" . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . "</b>' اضافه شد.", build_back_to_admin_panel_inline());
+            log_tg("STEP6_CREATED: product_id={$new_id}");
             exit;
 
         } catch (\Throwable $e) {
-            $msg = $e->getMessage();
-            log_tg("STEP6_EXCEPTION: ".$msg);
-            if ($conn instanceof PDO) {
-                $ei = $conn->errorInfo();
-                if (is_array($ei)) {
-                    log_tg("STEP6_PDO: sqlstate={$ei[0]} driver={$ei[1]} msg={$ei[2]}");
-                }
-            }
-            sendMessage($chat_id, "❌ خطا هنگام ثبت محصول. لطفاً دوباره تلاش کنید یا /cancel بزنید.");
-            sendAdminPanelMenu($chat_id);
+            log_tg("STEP6_EXCEPTION: ".$e->getMessage());
+            sendMessage($chat_id, "❌ خطا هنگام ثبت محصول. لطفاً دوباره تلاش کنید یا /cancel بزنید.", build_back_to_admin_panel_inline());
             exit;
         }
+    }
+
+    /* =================== مدیریت دسته‌بندی‌ها =================== */
+    if ($callback_data === 'admin_manage_categories') {
+        listCategoriesManage($chat_id, $mesasge_id);
+        exit;
+    }
+    if (strpos($callback_data, 'admin_toggle_category_') === 0) {
+        $cid = (int)str_replace('admin_toggle_category_', '', $callback_data);
+        $cat = query("SELECT","categories",false,[["key"=>"id","condition"=>"=","value"=>$cid]]);
+        if (!$cat) {
+            sendMessage($chat_id,"❌ دسته‌بندی یافت نشد.", build_back_to_admin_panel_inline());
+            exit;
+        }
+        $new = ($cat->status==='enable'?'disable':'enable');
+        query("UPDATE","categories",["status"=>$new],[["key"=>"id","condition"=>"=","value"=>$cid]]);
+        sendMessage($chat_id,"✅ وضعیت دسته «{$cat->name}» به <b>{$new}</b> تغییر کرد.");
+        listCategoriesManage($chat_id);
+        exit;
+    }
+
+    /* =================== سفارشات پرداخت‌شده + تایید/رد =================== */
+    if ($callback_data === 'admin_orders_paid') {
+        listPaidOrders($chat_id, $mesasge_id);
+        exit;
+    }
+    if (strpos($callback_data,'admin_order_view_')===0){
+        $oid=(int)str_replace('admin_order_view_','',$callback_data);
+        showOrderDetailsToAdmin($chat_id,$oid,$mesasge_id);
+        exit;
+    }
+    if (strpos($callback_data,'admin_order_approve_')===0){
+        $oid=(int)str_replace('admin_order_approve_','',$callback_data);
+        query("UPDATE","orders",["status"=>"approved"],[["key"=>"id","condition"=>"=","value"=>$oid]]);
+        sendMessage($chat_id,"✅ سفارش #{$oid} تایید شد.");
+        showOrderDetailsToAdmin($chat_id,$oid);
+        exit;
+    }
+    if (strpos($callback_data,'admin_order_reject_')===0){
+        $oid=(int)str_replace('admin_order_reject_','',$callback_data);
+        query("UPDATE","orders",["status"=>"rejected"],[["key"=>"id","condition"=>"=","value"=>$oid]]);
+        sendMessage($chat_id,"❌ سفارش #{$oid} رد شد.");
+        showOrderDetailsToAdmin($chat_id,$oid);
+        exit;
     }
 
     /* =================== گفتگو ادمین با خریدار =================== */
@@ -349,10 +517,9 @@ if ($callback_data) {
             exit;
         }
 
-        // 1) گرفتن chat_id خریدار
+        // گرفتن chat_id خریدار
         $buyer_chat_id = (int)($order->user_chat_id ?? 0);
         if ($buyer_chat_id <= 0 && !empty($order->user_id)) {
-            // تلاش از جدول users (در صورت وجود)
             $u = query("SELECT", "users", false, [["key"=>"id","condition"=>"=","value"=>$order->user_id]]);
             $buyer_chat_id = (int)($u->chat_id ?? 0);
         }
@@ -362,11 +529,11 @@ if ($callback_data) {
             exit;
         }
 
-        // 2) پاک‌سازی state قبلی
+        // پاک‌سازی state قبلی
         $stmt = $conn->prepare("DELETE FROM admin_process_state WHERE (admin_user_id=:a AND process_name='admin_msg_buyer') OR (admin_user_id=:b AND process_name='buyer_reply')");
         $stmt->execute([':a' => $chat_id, ':b' => $buyer_chat_id]);
 
-        // 3) ساخت state برای ادمین (ارسال پیام)
+        // ساخت state برای ادمین (ارسال پیام)
         query("CREATE", "admin_process_state", [
             "admin_user_id" => $chat_id,
             "process_name"  => "admin_msg_buyer",
@@ -377,7 +544,7 @@ if ($callback_data) {
             ], JSON_UNESCAPED_UNICODE)
         ]);
 
-        // 4) ساخت state برای خریدار (پاسخ)
+        // ساخت state برای خریدار (پاسخ)
         query("CREATE", "admin_process_state", [
             "admin_user_id" => $buyer_chat_id,
             "process_name"  => "buyer_reply",
@@ -388,9 +555,10 @@ if ($callback_data) {
             ], JSON_UNESCAPED_UNICODE)
         ]);
 
-        // 5) راهنمای ادمین
+        // راهنمای ادمین
         $kb = $telegram->buildInlineKeyBoard([
-            [ $telegram->buildInlineKeyBoardButton("🔚 پایان گفتگو", '', 'admin_close_dialog_' . $buyer_chat_id) ]
+            [ $telegram->buildInlineKeyBoardButton("🔚 پایان گفتگو", '', 'admin_close_dialog_' . $buyer_chat_id) ],
+            [ $telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'admin_root') ],
         ]);
         sendMessage($chat_id, "✍️ پیام‌تان را برای خریدار بفرستید.\nمی‌توانید <b>متن</b> یا <b>عکس با کپشن</b> ارسال کنید.\n(برای لغو /cancel)", $kb);
         log_tg("CB_HANDLED: contact_buyer oid={$oid} buyer={$buyer_chat_id}");
@@ -402,29 +570,28 @@ if ($callback_data) {
         $bchat = (int)str_replace('admin_close_dialog_', '', $callback_data);
         $stmt = $conn->prepare("DELETE FROM admin_process_state WHERE (admin_user_id=:a AND process_name='admin_msg_buyer') OR (admin_user_id=:b AND process_name='buyer_reply')");
         $stmt->execute([':a' => $chat_id, ':b' => $bchat]);
-        sendMessage($chat_id, "🔒 گفتگو بسته شد.");
+        sendMessage($chat_id, "🔒 گفتگو بسته شد.", build_back_to_admin_panel_inline());
         log_tg("CB_HANDLED: close_dialog buyer={$bchat}");
         exit;
     }
 
-    // لغو عملیات
+    // لغو عملیات (جنرال)
     if ($callback_data === 'admin_cancel_process') {
         $stmt = $conn->prepare("DELETE FROM admin_process_state WHERE admin_user_id = :cid");
         $stmt->execute([':cid' => $chat_id]);
-        sendMessage($chat_id, "✅ عملیات لغو شد.");
-        sendAdminPanelMenu($chat_id);
+        sendMessage($chat_id, "✅ عملیات لغو شد.", build_back_to_admin_panel_inline());
         log_tg("CB_HANDLED: admin_cancel_process");
         exit;
     }
 
     // سایر
-    sendMessage($chat_id, "این بخش در حال توسعه است.", false, $mesasge_id);
+    sendMessage($chat_id, "این بخش در حال توسعه است.", build_back_to_admin_panel_inline(), $mesasge_id);
     log_tg("CB_FALLBACK: {$callback_data}");
     exit;
 }
 
 /* ======================================================================
-   پردازش پیام متنی (یک‌بار)
+   پردازش پیام (متنی/عکس)
    ====================================================================== */
 if ($text_message || !empty($update['message'])) {
     if ($text_message) {
@@ -436,19 +603,20 @@ if ($text_message || !empty($update['message'])) {
     if ($text_message === '/cancel') {
         $stmt = $conn->prepare("DELETE FROM admin_process_state WHERE admin_user_id = :cid");
         $stmt->execute([':cid' => $chat_id]);
-        sendMessage($chat_id, "✅ عملیات لغو شد.");
-        sendAdminPanelMenu($chat_id);
+        sendMessage($chat_id, "✅ عملیات لغو شد.", build_back_to_admin_panel_inline());
         log_tg("MSG_HANDLED: cancel");
         exit;
     }
 
     if ($text_message === '/admin') {
-        sendAdminPanelMenu($chat_id, $mesasge_id);
-        log_tg("MSG_HANDLED: open admin panel");
+        sendAdminRootMenu($chat_id, $mesasge_id);
+        // کیبورد همیشگی /admin را هم بفرستیم (یک‌بار هر بار)
+        send_quick_admin_reply_keyboard($chat_id);
+        log_tg("MSG_HANDLED: open admin root (internal)");
         exit;
     }
 
-    // 🔧 اینجا state بر اساس admin_user_id همان chat_id فعلی لود می‌شود
+    // لود state برای chat_id فعلی
     $admin_state = query(
         "SELECT",
         "admin_process_state",
@@ -461,13 +629,11 @@ if ($text_message || !empty($update['message'])) {
     );
     if (!$admin_state) {
         log_tg("MSG_INFO: no active state");
-        // اگر هیچ state ای نبود، ولی ممکنه این پیام پاسخ خریدار باشد که state اش قبلا پاک شده؟
-        // اینجا می‌تونید رفتار آزاد داشته باشید. فعلاً خروج.
         exit;
     }
 
     $process_name = $admin_state->process_name;
-    $step         = (string)$admin_state->step; // ممکن است عدد یا رشته باشد
+    $step         = (string)$admin_state->step;
     $step_data    = json_decode($admin_state->step_data ?? "{}", true) ?: [];
 
     /* ----------------- افزودن دسته ----------------- */
@@ -489,8 +655,7 @@ if ($text_message || !empty($update['message'])) {
                 "status" => "enable"
             ]);
             $conn->prepare("DELETE FROM admin_process_state WHERE id = :id")->execute([':id' => $admin_state->id]);
-            sendMessage($chat_id, "✅ دسته‌بندی '<b>{$step_data['name']}</b>' با موفقیت اضافه شد.");
-            sendAdminPanelMenu($chat_id);
+            sendMessage($chat_id, "✅ دسته‌بندی '<b>{$step_data['name']}</b>' اضافه شد.", build_back_to_admin_panel_inline());
             log_tg("STATE_DONE: add_category name={$step_data['name']}");
             exit;
         }
@@ -518,7 +683,7 @@ if ($text_message || !empty($update['message'])) {
             exit;
         } elseif ($step === '3') {
             if (!is_numeric($text_message)) {
-                sendMessage($chat_id, "❌ لطفاً قیمت را فقط به صورت عدد وارد کنید.");
+                sendMessage($chat_id, "❌ لطفاً قیمت را فقط به صورت عدد وارد کنید.", build_back_to_admin_panel_inline());
                 log_tg("STATE_ERR: price not numeric");
                 exit;
             }
@@ -552,8 +717,7 @@ if ($text_message || !empty($update['message'])) {
 
             if (!$categories || count($categories) === 0) {
                 $conn->prepare("DELETE FROM admin_process_state WHERE id = :id")->execute([':id' => $admin_state->id]);
-                sendMessage($chat_id, "❌ هیچ دسته‌بندی فعالی وجود ندارد. ابتدا یک دسته‌بندی ایجاد کنید.");
-                sendAdminPanelMenu($chat_id);
+                sendMessage($chat_id, "❌ هیچ دسته‌بندی فعالی وجود ندارد. ابتدا یک دسته‌بندی ایجاد کنید.", build_back_to_admin_panel_inline());
                 log_tg("STATE_ERR: no categories to pick");
                 exit;
             }
@@ -578,7 +742,7 @@ if ($text_message || !empty($update['message'])) {
         $pid      = (int)($step_data['product_id'] ?? 0);
 
         if ($pid <= 0) {
-            sendMessage($chat_id, "❌ محصول نامعتبر.");
+            sendMessage($chat_id, "❌ محصول نامعتبر.", build_back_to_admin_panel_inline());
             log_tg("EDIT_ERR: invalid pid in state");
             exit;
         }
@@ -587,7 +751,7 @@ if ($text_message || !empty($update['message'])) {
 
         if ($field === 'price' || $field === 'inventory') {
             if (!is_numeric($value)) {
-                sendMessage($chat_id, "❌ لطفاً مقدار عددی معتبر وارد کنید.");
+                sendMessage($chat_id, "❌ لطفاً مقدار عددی معتبر وارد کنید.", build_back_to_admin_panel_inline());
                 log_tg("EDIT_ERR: non-numeric for {$field} pid={$pid}");
                 exit;
             }
@@ -604,7 +768,7 @@ if ($text_message || !empty($update['message'])) {
         ];
 
         if (!isset($map[$field])) {
-            sendMessage($chat_id, "❌ فیلد ناشناخته برای ویرایش.");
+            sendMessage($chat_id, "❌ فیلد ناشناخته برای ویرایش.", build_back_to_admin_panel_inline());
             log_tg("EDIT_ERR: unknown field={$field}");
             exit;
         }
@@ -612,7 +776,7 @@ if ($text_message || !empty($update['message'])) {
         query("UPDATE", "products", [ $map[$field] => $value ], [["key"=>"id","condition"=>"=","value"=>$pid]]);
 
         $conn->prepare("DELETE FROM admin_process_state WHERE id = :id")->execute([':id' => $admin_state->id]);
-        sendMessage($chat_id, "✅ مقدار <b>{$field}</b> محصول #{$pid} بروزرسانی شد.");
+        sendMessage($chat_id, "✅ مقدار <b>{$field}</b> محصول #{$pid} بروزرسانی شد.", build_back_to_admin_panel_inline());
         showProductInfo($chat_id, $pid, 'view', $mesasge_id);
         log_tg("EDIT_DONE: field={$field} pid={$pid} value=".mb_substr((string)$value,0,60));
         exit;
@@ -624,12 +788,11 @@ if ($text_message || !empty($update['message'])) {
         $order_id      = (int)($step_data['order_id'] ?? 0);
 
         if ($buyer_chat_id <= 0) {
-            sendMessage($chat_id, "❌ گیرنده معتبر نیست.");
+            sendMessage($chat_id, "❌ گیرنده معتبر نیست.", build_back_to_admin_panel_inline());
             log_tg("DIALOG_ERR: admin_msg_buyer no buyer_chat_id");
             exit;
         }
 
-        // تشخیص عکس یا متن:
         $photo_id = extract_photo_from_update($update);
         $caption  = extract_caption_from_update($update);
 
@@ -646,14 +809,14 @@ if ($text_message || !empty($update['message'])) {
                 "📣 <b>پیام از پشتیبانی:</b>\n\n" . $text_message
             );
         } else {
-            sendMessage($chat_id, "⚠️ فقط متن یا عکس را بفرستید.");
+            sendMessage($chat_id, "⚠️ فقط متن یا عکس را بفرستید.", build_back_to_admin_panel_inline());
             log_tg("DIALOG_WARN: admin_msg_buyer unknown payload");
             exit;
         }
 
-        // دکمه پایان گفتگو
         $kb = $telegram->buildInlineKeyBoard([
-            [ $telegram->buildInlineKeyBoardButton("🔚 پایان گفتگو", '', 'admin_close_dialog_' . $buyer_chat_id) ]
+            [ $telegram->buildInlineKeyBoardButton("🔚 پایان گفتگو", '', 'admin_close_dialog_' . $buyer_chat_id) ],
+            [ $telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'admin_root') ],
         ]);
         sendMessage($chat_id, "✅ پیام برای خریدار ارسال شد.", $kb);
         log_tg("DIALOG_INFO: sent to buyer={$buyer_chat_id} by admin={$chat_id} order={$order_id}");
@@ -661,12 +824,10 @@ if ($text_message || !empty($update['message'])) {
     }
 
     if ($process_name === 'buyer_reply') {
-        // این مسیر وقتی فعال است که پیام از سمت خریدار بیاید
         $admin_id = (int)($step_data['admin_chat_id'] ?? 0);
         $order_id = (int)($step_data['order_id'] ?? 0);
 
         if ($admin_id <= 0) {
-            // اگر به هر دلیل admin مشخص نبود، state را پاک کنیم
             $conn->prepare("DELETE FROM admin_process_state WHERE id = :id")->execute([':id' => $admin_state->id]);
             log_tg("DIALOG_ERR: buyer_reply no admin_id");
             exit;
@@ -685,12 +846,8 @@ if ($text_message || !empty($update['message'])) {
         } elseif (!empty($text_message)) {
             sendMessage($admin_id, "📥 <b>پاسخ خریدار</b> (Order #{$order_id}):\n\n".$text_message);
         } else {
-            // نوع پیام ناشناخته؛ نادیده بگیر
             log_tg("DIALOG_WARN: buyer_reply unknown payload");
         }
-
-        // به خریدار هم اطلاع بدهیم که پیامش رسید (اختیاری)
-        // sendMessage($chat_id, "✅ پیام شما برای پشتیبانی ارسال شد.");
 
         log_tg("DIALOG_INFO: buyer={$chat_id} -> admin={$admin_id} order={$order_id}");
         exit;

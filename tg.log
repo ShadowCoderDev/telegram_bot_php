@@ -270,3 +270,70 @@
 [2025-10-07T21:09:02+00:00] CB_HANDLED: list edit_product
 [2025-10-07T21:09:11+00:00] CB_RECEIVED: chat=2020715168 data=admin_panel
 [2025-10-07T21:09:12+00:00] CB_HANDLED: open_menu admin_panel
+[2025-10-07T21:27:11+00:00] MSG_RECEIVED: chat=2020715168 text=/start
+[2025-10-07T21:27:11+00:00] MSG_INFO: no active state
+[2025-10-07T21:27:33+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T21:27:36+00:00] MSG_HANDLED: open admin root (internal)
+[2025-10-07T21:28:20+00:00] CB_RECEIVED: chat=2020715168 data=admin_orders_paid
+[2025-10-07T21:28:35+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product_all
+[2025-10-07T21:28:52+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_select_15
+[2025-10-07T21:28:53+00:00] CB_HANDLED: showProductInfo view pid=15
+[2025-10-07T21:28:57+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_menu_15
+[2025-10-07T21:28:59+00:00] CB_HANDLED: open edit menu pid=15
+[2025-10-07T21:29:03+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_toggle_status_15
+[2025-10-07T21:29:23+00:00] CB_HANDLED: toggle_status pid=15 -> enable
+[2025-10-07T21:29:25+00:00] CB_RECEIVED: chat=2020715168 data=admin_root
+[2025-10-07T21:29:34+00:00] CB_RECEIVED: chat=2020715168 data=admin_root
+[2025-10-07T21:29:38+00:00] CB_RECEIVED: chat=2020715168 data=admin_panel
+[2025-10-07T21:29:39+00:00] CB_HANDLED: open_menu admin_panel
+[2025-10-07T21:29:40+00:00] CB_RECEIVED: chat=2020715168 data=admin_root
+[2025-10-07T21:29:43+00:00] CB_RECEIVED: chat=2020715168 data=admin_panel
+[2025-10-07T21:29:47+00:00] CB_HANDLED: open_menu admin_panel
+[2025-10-07T21:29:51+00:00] CB_RECEIVED: chat=2020715168 data=admin_root
+[2025-10-07T21:29:54+00:00] CB_RECEIVED: chat=2020715168 data=admin_panel
+[2025-10-07T21:29:56+00:00] CB_HANDLED: open_menu admin_panel
+[2025-10-07T21:30:00+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product_all
+[2025-10-07T21:30:04+00:00] CB_RECEIVED: chat=2020715168 data=admin_orders_paid
+[2025-10-07T21:30:04+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T21:30:15+00:00] CB_RECEIVED: chat=2020715168 data=admin_orders_paid
+[2025-10-07T21:30:31+00:00] CB_RECEIVED: chat=2020715168 data=admin_orders_paid
+[2025-10-07T21:30:59+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T21:31:03+00:00] MSG_HANDLED: open admin root (internal)
+[2025-10-07T21:31:03+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T21:31:09+00:00] MSG_HANDLED: open admin root (internal)
+[2025-10-07T21:31:10+00:00] MSG_RECEIVED: chat=2020715168 text=/start
+[2025-10-07T21:31:10+00:00] MSG_INFO: no active state
+[2025-10-07T21:31:20+00:00] MSG_HANDLED: open admin root (internal)
+[2025-10-07T21:47:05+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T21:47:10+00:00] CB_RECEIVED: chat=2020715168 data=admin_orders_paid
+[2025-10-07T21:47:24+00:00] CB_RECEIVED: chat=2020715168 data=admin_orders_paid
+[2025-10-07T21:55:50+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T21:55:58+00:00] CB_RECEIVED: chat=2020715168 data=admin_orders_paid
+[2025-10-07T21:55:59+00:00] ORDERS_ERR: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'created_at' in 'field list'
+[2025-10-07T22:17:41+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T22:17:46+00:00] MSG_HANDLED: open admin root (internal)
+[2025-10-07T22:17:50+00:00] CB_RECEIVED: chat=2020715168 data=start
+[2025-10-07T22:17:51+00:00] CB_HANDLED: open_menu start
+[2025-10-07T22:17:57+00:00] MSG_RECEIVED: chat=2020715168 text=/admin
+[2025-10-07T22:17:59+00:00] MSG_HANDLED: open admin root (internal)
+[2025-10-07T22:18:09+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product_all
+[2025-10-07T22:18:16+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_select_15
+[2025-10-07T22:18:17+00:00] CB_HANDLED: showProductInfo view pid=15
+[2025-10-07T22:18:25+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_menu_15
+[2025-10-07T22:18:27+00:00] CB_HANDLED: open edit menu pid=15
+[2025-10-07T22:18:32+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_toggle_status_15
+[2025-10-07T22:18:34+00:00] CB_HANDLED: toggle_status pid=15 -> disable
+[2025-10-07T22:18:38+00:00] CB_RECEIVED: chat=2020715168 data=admin_root
+[2025-10-07T22:18:48+00:00] CB_RECEIVED: chat=2020715168 data=start
+[2025-10-07T22:18:50+00:00] CB_HANDLED: open_menu start
+[2025-10-07T22:18:54+00:00] CB_RECEIVED: chat=2020715168 data=buy_product
+[2025-10-07T22:18:56+00:00] CB_FALLBACK: buy_product
+[2025-10-07T22:19:01+00:00] CB_RECEIVED: chat=2020715168 data=admin_root
+[2025-10-07T22:20:02+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_product_all
+[2025-10-07T22:20:07+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_select_15
+[2025-10-07T22:20:09+00:00] CB_HANDLED: showProductInfo view pid=15
+[2025-10-07T22:20:12+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_menu_15
+[2025-10-07T22:20:14+00:00] CB_HANDLED: open edit menu pid=15
+[2025-10-07T22:20:18+00:00] CB_RECEIVED: chat=2020715168 data=admin_edit_toggle_status_15
+[2025-10-07T22:20:21+00:00] CB_HANDLED: toggle_status pid=15 -> enable
+[2025-10-07T22:20:25+00:00] CB_RECEIVED: chat=2020715168 data=admin_root
