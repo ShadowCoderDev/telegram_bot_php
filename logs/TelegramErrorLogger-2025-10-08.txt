@@ -1,0 +1,397 @@
+============[Date]============
+[ 2025-10-08 17:06:06  UTC ] 
+==========[Response]==========
+ok:			False
+error_code:		400
+description:		Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message
+=========[Sent Data]==========
+[ref]
+ref.update_id= 119060118
+ref.callback_query.id= 8678905562025028325
+ref.callback_query.from.id= 2020715168
+ref.callback_query.from.is_bot= false
+ref.callback_query.from.first_name= Lila
+ref.callback_query.from.username= MetaaVerses
+ref.callback_query.from.language_code= en
+ref.callback_query.message.message_id= 509
+ref.callback_query.message.from.id= 8267056539
+ref.callback_query.message.from.is_bot= true
+ref.callback_query.message.from.first_name= English_With_Us
+ref.callback_query.message.from.username= English_Bot_With_Us_bot
+ref.callback_query.message.chat.id= 2020715168
+ref.callback_query.message.chat.first_name= Lila
+ref.callback_query.message.chat.username= MetaaVerses
+ref.callback_query.message.chat.type= private
+ref.callback_query.message.date= 1759942823
+ref.callback_query.message.edit_date= 1759943106
+ref.callback_query.message.text= سفارشات پرداخت‌شده (حداکثر ۱۰۰ مورد اخیر):
+ref.callback_query.message.entities.0.offset= 0
+ref.callback_query.message.entities.0.length= 18
+ref.callback_query.message.entities.0.type= bold
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.text= 🧾 #10 — approved — 2025-10-08 16:46
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.callback_data= admin_order_view_10
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.text= بازگشت 🔙
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.callback_data= admin_root
+ref.callback_query.chat_instance= 4392676828707811893
+ref.callback_query.data= admin_root
+
+
+[ref]
+ref.text= 🔐 <b>پنل مدیریت</b>
+
+یکی از گزینه‌ها را انتخاب کن:
+ref.parse_mode= HTML
+ref.reply_markup= {"inline_keyboard":[[{"text":"\ud83d\udcca \u0622\u0645\u0627\u0631","callback_data":"admin_stats"},{"text":"\u2795 \u0627\u0641\u0632\u0648\u062f\u0646 \u062f\u0633\u062a\u0647\u200c\u0628\u0646\u062f\u06cc","callback_data":"admin_add_category"}],[{"text":"\u2795 \u0627\u0641\u0632\u0648\u062f\u0646 \u0645\u062d\u0635\u0648\u0644","callback_data":"admin_add_product"}],[{"text":"\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634 \u0645\u062d\u0635\u0648\u0644 (\u0647\u0645\u0647)","callback_data":"admin_edit_product_all"},{"text":"\ud83d\uddd1\ufe0f \u062d\u0630\u0641 \u0645\u062d\u0635\u0648\u0644","callback_data":"admin_delete_product"}],[{"text":"\ud83d\udcc2 \u0645\u062f\u06cc\u0631\u06cc\u062a \u062f\u0633\u062a\u0647\u200c\u0628\u0646\u062f\u06cc\u200c\u0647\u0627","callback_data":"admin_manage_categories"}],[{"text":"\ud83e\uddfe \u0633\u0641\u0627\u0631\u0634\u0627\u062a \u067e\u0631\u062f\u0627\u062e\u062a\u200c\u0634\u062f\u0647","callback_data":"admin_orders_paid"}],[{"text":"\ud83c\udfe0 \u0645\u0646\u0648\u06cc \u0627\u0635\u0644\u06cc","callback_data":"start"}]]}
+ref.message_id= 509
+
+
+============[Trace]===========
+#0 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(1862): TelegramErrorLogger::log(Array, Array)
+#1 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(124): Telegram->sendAPIRequest('https://api.tel...', Array)
+#2 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(692): Telegram->endpoint('editMessageText', Array)
+#3 /Users/afsari/PhpstormProjects/telegram_bot_php/functions.php(77): Telegram->editMessageText(Array)
+#4 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_functions.php(223): sendMessage(2020715168, '\xF0\x9F\x94\x90 <b>\xD9\xBE\xD9\x86\xD9\x84 ...', '{"inline_keyboa...', 509)
+#5 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_handler.php(43): sendAdminRootMenu(2020715168, 509)
+#6 /Users/afsari/PhpstormProjects/telegram_bot_php/index.php(28): require_once('/Users/afsari/P...')
+#7 /Applications/Herd.app/Contents/Resources/valet/server.php(167): require('/Users/afsari/P...')
+#8 {main}
+
+============[Date]============
+[ 2025-10-08 17:06:15  UTC ] 
+==========[Response]==========
+ok:			False
+error_code:		400
+description:		Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message
+=========[Sent Data]==========
+[ref]
+ref.update_id= 119060120
+ref.callback_query.id= 8678905562737253093
+ref.callback_query.from.id= 2020715168
+ref.callback_query.from.is_bot= false
+ref.callback_query.from.first_name= Lila
+ref.callback_query.from.username= MetaaVerses
+ref.callback_query.from.language_code= en
+ref.callback_query.message.message_id= 509
+ref.callback_query.message.from.id= 8267056539
+ref.callback_query.message.from.is_bot= true
+ref.callback_query.message.from.first_name= English_With_Us
+ref.callback_query.message.from.username= English_Bot_With_Us_bot
+ref.callback_query.message.chat.id= 2020715168
+ref.callback_query.message.chat.first_name= Lila
+ref.callback_query.message.chat.username= MetaaVerses
+ref.callback_query.message.chat.type= private
+ref.callback_query.message.date= 1759942823
+ref.callback_query.message.edit_date= 1759943139
+ref.callback_query.message.text= 🔐 پنل مدیریت
+
+یکی از گزینه‌ها را انتخاب کن:
+ref.callback_query.message.entities.0.offset= 3
+ref.callback_query.message.entities.0.length= 10
+ref.callback_query.message.entities.0.type= bold
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.text= 📊 آمار
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.callback_data= admin_stats
+ref.callback_query.message.reply_markup.inline_keyboard.0.1.text= ➕ افزودن دسته‌بندی
+ref.callback_query.message.reply_markup.inline_keyboard.0.1.callback_data= admin_add_category
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.text= ➕ افزودن محصول
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.callback_data= admin_add_product
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.text= ✏️ ویرایش محصول (همه)
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.callback_data= admin_edit_product_all
+ref.callback_query.message.reply_markup.inline_keyboard.2.1.text= 🗑️ حذف محصول
+ref.callback_query.message.reply_markup.inline_keyboard.2.1.callback_data= admin_delete_product
+ref.callback_query.message.reply_markup.inline_keyboard.3.0.text= 📂 مدیریت دسته‌بندی‌ها
+ref.callback_query.message.reply_markup.inline_keyboard.3.0.callback_data= admin_manage_categories
+ref.callback_query.message.reply_markup.inline_keyboard.4.0.text= 🧾 سفارشات پرداخت‌شده
+ref.callback_query.message.reply_markup.inline_keyboard.4.0.callback_data= admin_orders_paid
+ref.callback_query.message.reply_markup.inline_keyboard.5.0.text= 🏠 منوی اصلی
+ref.callback_query.message.reply_markup.inline_keyboard.5.0.callback_data= start
+ref.callback_query.chat_instance= 4392676828707811893
+ref.callback_query.data= admin_orders_paid
+
+
+[ref]
+ref.text= <b>سفارشات پرداخت‌شده</b> (حداکثر ۱۰۰ مورد اخیر):
+ref.parse_mode= HTML
+ref.reply_markup= {"inline_keyboard":[[{"text":"\ud83e\uddfe #10 \u2014 approved \u2014 2025-10-08 16:46","callback_data":"admin_order_view_10"}],[{"text":"\ud83e\uddfe #9 \u2014 payed \u2014 2025-10-08 15:22","callback_data":"admin_order_view_9"}],[{"text":"\u0628\u0627\u0632\u06af\u0634\u062a \ud83d\udd19","callback_data":"admin_root"}]]}
+ref.message_id= 509
+
+
+============[Trace]===========
+#0 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(1862): TelegramErrorLogger::log(Array, Array)
+#1 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(124): Telegram->sendAPIRequest('https://api.tel...', Array)
+#2 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(692): Telegram->endpoint('editMessageText', Array)
+#3 /Users/afsari/PhpstormProjects/telegram_bot_php/functions.php(77): Telegram->editMessageText(Array)
+#4 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_functions.php(265): sendMessage(2020715168, '<b>\xD8\xB3\xD9\x81\xD8\xA7\xD8\xB1\xD8\xB4\xD8\xA7...', '{"inline_keyboa...', 509)
+#5 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_handler.php(322): listPaidOrders(2020715168, 509)
+#6 /Users/afsari/PhpstormProjects/telegram_bot_php/index.php(28): require_once('/Users/afsari/P...')
+#7 /Applications/Herd.app/Contents/Resources/valet/server.php(167): require('/Users/afsari/P...')
+#8 {main}
+
+============[Date]============
+[ 2025-10-08 17:31:42  UTC ] 
+==========[Response]==========
+ok:			False
+error_code:		400
+description:		Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message
+=========[Sent Data]==========
+[ref]
+ref.update_id= 119060122
+ref.callback_query.id= 8678905564430143670
+ref.callback_query.from.id= 2020715168
+ref.callback_query.from.is_bot= false
+ref.callback_query.from.first_name= Lila
+ref.callback_query.from.username= MetaaVerses
+ref.callback_query.from.language_code= en
+ref.callback_query.message.message_id= 509
+ref.callback_query.message.from.id= 8267056539
+ref.callback_query.message.from.is_bot= true
+ref.callback_query.message.from.first_name= English_With_Us
+ref.callback_query.message.from.username= English_Bot_With_Us_bot
+ref.callback_query.message.chat.id= 2020715168
+ref.callback_query.message.chat.first_name= Lila
+ref.callback_query.message.chat.username= MetaaVerses
+ref.callback_query.message.chat.type= private
+ref.callback_query.message.date= 1759942823
+ref.callback_query.message.edit_date= 1759943172
+ref.callback_query.message.text= سفارشات پرداخت‌شده (حداکثر ۱۰۰ مورد اخیر):
+ref.callback_query.message.entities.0.offset= 0
+ref.callback_query.message.entities.0.length= 18
+ref.callback_query.message.entities.0.type= bold
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.text= 🧾 #10 — approved — 2025-10-08 16:46
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.callback_data= admin_order_view_10
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.text= 🧾 #9 — payed — 2025-10-08 15:22
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.callback_data= admin_order_view_9
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.text= بازگشت 🔙
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.callback_data= admin_root
+ref.callback_query.chat_instance= 4392676828707811893
+ref.callback_query.data= admin_root
+
+
+[ref]
+ref.text= 🔐 <b>پنل مدیریت</b>
+
+یکی از گزینه‌ها را انتخاب کن:
+ref.parse_mode= HTML
+ref.reply_markup= {"inline_keyboard":[[{"text":"\ud83d\udcca \u0622\u0645\u0627\u0631","callback_data":"admin_stats"},{"text":"\u2795 \u0627\u0641\u0632\u0648\u062f\u0646 \u062f\u0633\u062a\u0647\u200c\u0628\u0646\u062f\u06cc","callback_data":"admin_add_category"}],[{"text":"\u2795 \u0627\u0641\u0632\u0648\u062f\u0646 \u0645\u062d\u0635\u0648\u0644","callback_data":"admin_add_product"}],[{"text":"\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634 \u0645\u062d\u0635\u0648\u0644 (\u0647\u0645\u0647)","callback_data":"admin_edit_product_all"},{"text":"\ud83d\uddd1\ufe0f \u062d\u0630\u0641 \u0645\u062d\u0635\u0648\u0644","callback_data":"admin_delete_product"}],[{"text":"\ud83d\udcc2 \u0645\u062f\u06cc\u0631\u06cc\u062a \u062f\u0633\u062a\u0647\u200c\u0628\u0646\u062f\u06cc\u200c\u0647\u0627","callback_data":"admin_manage_categories"}],[{"text":"\ud83e\uddfe \u0633\u0641\u0627\u0631\u0634\u0627\u062a \u067e\u0631\u062f\u0627\u062e\u062a\u200c\u0634\u062f\u0647","callback_data":"admin_orders_paid"}],[{"text":"\ud83c\udfe0 \u0645\u0646\u0648\u06cc \u0627\u0635\u0644\u06cc","callback_data":"start"}]]}
+ref.message_id= 509
+
+
+============[Trace]===========
+#0 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(1862): TelegramErrorLogger::log(Array, Array)
+#1 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(124): Telegram->sendAPIRequest('https://api.tel...', Array)
+#2 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(692): Telegram->endpoint('editMessageText', Array)
+#3 /Users/afsari/PhpstormProjects/telegram_bot_php/functions.php(77): Telegram->editMessageText(Array)
+#4 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_functions.php(223): sendMessage(2020715168, '\xF0\x9F\x94\x90 <b>\xD9\xBE\xD9\x86\xD9\x84 ...', '{"inline_keyboa...', 509)
+#5 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_handler.php(43): sendAdminRootMenu(2020715168, 509)
+#6 /Users/afsari/PhpstormProjects/telegram_bot_php/index.php(28): require_once('/Users/afsari/P...')
+#7 /Applications/Herd.app/Contents/Resources/valet/server.php(167): require('/Users/afsari/P...')
+#8 {main}
+
+============[Date]============
+[ 2025-10-08 17:33:47  UTC ] 
+==========[Response]==========
+ok:			False
+curl_error_code:		35
+curl_error:		OpenSSL SSL_connect: SSL_ERROR_SYSCALL in connection to api.telegram.org:443 
+=========[Sent Data]==========
+[ref]
+ref.update_id= 119060126
+ref.callback_query.id= 8678905563745821687
+ref.callback_query.from.id= 2020715168
+ref.callback_query.from.is_bot= false
+ref.callback_query.from.first_name= Lila
+ref.callback_query.from.username= MetaaVerses
+ref.callback_query.from.language_code= en
+ref.callback_query.message.message_id= 511
+ref.callback_query.message.from.id= 8267056539
+ref.callback_query.message.from.is_bot= true
+ref.callback_query.message.from.first_name= English_With_Us
+ref.callback_query.message.from.username= English_Bot_With_Us_bot
+ref.callback_query.message.chat.id= 2020715168
+ref.callback_query.message.chat.first_name= Lila
+ref.callback_query.message.chat.username= MetaaVerses
+ref.callback_query.message.chat.type= private
+ref.callback_query.message.date= 1759944746
+ref.callback_query.message.text= 📂 مدیریت دسته‌بندی‌ها:
+ref.callback_query.message.entities.0.offset= 3
+ref.callback_query.message.entities.0.length= 19
+ref.callback_query.message.entities.0.type= bold
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.text= ⛔ 🥰 تست ۳
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.callback_data= noop
+ref.callback_query.message.reply_markup.inline_keyboard.0.1.text= فعال‌سازی ✅
+ref.callback_query.message.reply_markup.inline_keyboard.0.1.callback_data= admin_toggle_category_5
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.text= ✅ 🤓 jsss
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.callback_data= noop
+ref.callback_query.message.reply_markup.inline_keyboard.1.1.text= غیرفعال‌سازی ⛔
+ref.callback_query.message.reply_markup.inline_keyboard.1.1.callback_data= admin_toggle_category_4
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.text= ✅ 😇😇😇 دوره های افلاین
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.callback_data= noop
+ref.callback_query.message.reply_markup.inline_keyboard.2.1.text= غیرفعال‌سازی ⛔
+ref.callback_query.message.reply_markup.inline_keyboard.2.1.callback_data= admin_toggle_category_3
+ref.callback_query.message.reply_markup.inline_keyboard.3.0.text= ✅ 📚 دوره آنلاین
+ref.callback_query.message.reply_markup.inline_keyboard.3.0.callback_data= noop
+ref.callback_query.message.reply_markup.inline_keyboard.3.1.text= غیرفعال‌سازی ⛔
+ref.callback_query.message.reply_markup.inline_keyboard.3.1.callback_data= admin_toggle_category_2
+ref.callback_query.message.reply_markup.inline_keyboard.4.0.text= ✅ ✨ کتاب
+ref.callback_query.message.reply_markup.inline_keyboard.4.0.callback_data= noop
+ref.callback_query.message.reply_markup.inline_keyboard.4.1.text= غیرفعال‌سازی ⛔
+ref.callback_query.message.reply_markup.inline_keyboard.4.1.callback_data= admin_toggle_category_1
+ref.callback_query.message.reply_markup.inline_keyboard.5.0.text= بازگشت 🔙
+ref.callback_query.message.reply_markup.inline_keyboard.5.0.callback_data= admin_root
+ref.callback_query.chat_instance= 4392676828707811893
+ref.callback_query.data= admin_toggle_category_4
+
+
+[ref]
+ref.text= ✅ وضعیت دسته «jsss» به <b>enable</b> تغییر کرد.
+ref.parse_mode= HTML
+
+
+============[Trace]===========
+#0 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(1862): TelegramErrorLogger::log(Array, Array)
+#1 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(124): Telegram->sendAPIRequest('https://api.tel...', Array)
+#2 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(182): Telegram->endpoint('sendMessage', Array)
+#3 /Users/afsari/PhpstormProjects/telegram_bot_php/functions.php(79): Telegram->sendMessage(Array)
+#4 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_handler.php(315): sendMessage(2020715168, '\xE2\x9C\x85 \xD9\x88\xD8\xB6\xD8\xB9\xDB\x8C\xD8\xAA ...')
+#5 /Users/afsari/PhpstormProjects/telegram_bot_php/index.php(28): require_once('/Users/afsari/P...')
+#6 /Applications/Herd.app/Contents/Resources/valet/server.php(167): require('/Users/afsari/P...')
+#7 {main}
+
+============[Date]============
+[ 2025-10-08 17:34:17  UTC ] 
+==========[Response]==========
+ok:			False
+error_code:		400
+description:		Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message
+=========[Sent Data]==========
+[ref]
+ref.update_id= 119060128
+ref.callback_query.id= 8678905563548820418
+ref.callback_query.from.id= 2020715168
+ref.callback_query.from.is_bot= false
+ref.callback_query.from.first_name= Lila
+ref.callback_query.from.username= MetaaVerses
+ref.callback_query.from.language_code= en
+ref.callback_query.message.message_id= 513
+ref.callback_query.message.from.id= 8267056539
+ref.callback_query.message.from.is_bot= true
+ref.callback_query.message.from.first_name= English_With_Us
+ref.callback_query.message.from.username= English_Bot_With_Us_bot
+ref.callback_query.message.chat.id= 2020715168
+ref.callback_query.message.chat.first_name= Lila
+ref.callback_query.message.chat.username= MetaaVerses
+ref.callback_query.message.chat.type= private
+ref.callback_query.message.date= 1759944761
+ref.callback_query.message.text= 📂 مدیریت دسته‌بندی‌ها:
+ref.callback_query.message.entities.0.offset= 3
+ref.callback_query.message.entities.0.length= 19
+ref.callback_query.message.entities.0.type= bold
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.text= ⛔ 🥰 تست ۳
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.callback_data= noop
+ref.callback_query.message.reply_markup.inline_keyboard.0.1.text= فعال‌سازی ✅
+ref.callback_query.message.reply_markup.inline_keyboard.0.1.callback_data= admin_toggle_category_5
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.text= ⛔ 🤓 jsss
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.callback_data= noop
+ref.callback_query.message.reply_markup.inline_keyboard.1.1.text= فعال‌سازی ✅
+ref.callback_query.message.reply_markup.inline_keyboard.1.1.callback_data= admin_toggle_category_4
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.text= ✅ 😇😇😇 دوره های افلاین
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.callback_data= noop
+ref.callback_query.message.reply_markup.inline_keyboard.2.1.text= غیرفعال‌سازی ⛔
+ref.callback_query.message.reply_markup.inline_keyboard.2.1.callback_data= admin_toggle_category_3
+ref.callback_query.message.reply_markup.inline_keyboard.3.0.text= ✅ 📚 دوره آنلاین
+ref.callback_query.message.reply_markup.inline_keyboard.3.0.callback_data= noop
+ref.callback_query.message.reply_markup.inline_keyboard.3.1.text= غیرفعال‌سازی ⛔
+ref.callback_query.message.reply_markup.inline_keyboard.3.1.callback_data= admin_toggle_category_2
+ref.callback_query.message.reply_markup.inline_keyboard.4.0.text= ✅ ✨ کتاب
+ref.callback_query.message.reply_markup.inline_keyboard.4.0.callback_data= noop
+ref.callback_query.message.reply_markup.inline_keyboard.4.1.text= غیرفعال‌سازی ⛔
+ref.callback_query.message.reply_markup.inline_keyboard.4.1.callback_data= admin_toggle_category_1
+ref.callback_query.message.reply_markup.inline_keyboard.5.0.text= بازگشت 🔙
+ref.callback_query.message.reply_markup.inline_keyboard.5.0.callback_data= admin_root
+ref.callback_query.chat_instance= 4392676828707811893
+ref.callback_query.data= admin_root
+
+
+[ref]
+ref.text= 🔐 <b>پنل مدیریت</b>
+
+یکی از گزینه‌ها را انتخاب کن:
+ref.parse_mode= HTML
+ref.reply_markup= {"inline_keyboard":[[{"text":"\ud83d\udcca \u0622\u0645\u0627\u0631","callback_data":"admin_stats"},{"text":"\u2795 \u0627\u0641\u0632\u0648\u062f\u0646 \u062f\u0633\u062a\u0647\u200c\u0628\u0646\u062f\u06cc","callback_data":"admin_add_category"}],[{"text":"\u2795 \u0627\u0641\u0632\u0648\u062f\u0646 \u0645\u062d\u0635\u0648\u0644","callback_data":"admin_add_product"}],[{"text":"\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634 \u0645\u062d\u0635\u0648\u0644 (\u0647\u0645\u0647)","callback_data":"admin_edit_product_all"},{"text":"\ud83d\uddd1\ufe0f \u062d\u0630\u0641 \u0645\u062d\u0635\u0648\u0644","callback_data":"admin_delete_product"}],[{"text":"\ud83d\udcc2 \u0645\u062f\u06cc\u0631\u06cc\u062a \u062f\u0633\u062a\u0647\u200c\u0628\u0646\u062f\u06cc\u200c\u0647\u0627","callback_data":"admin_manage_categories"}],[{"text":"\ud83e\uddfe \u0633\u0641\u0627\u0631\u0634\u0627\u062a \u067e\u0631\u062f\u0627\u062e\u062a\u200c\u0634\u062f\u0647","callback_data":"admin_orders_paid"}],[{"text":"\ud83c\udfe0 \u0645\u0646\u0648\u06cc \u0627\u0635\u0644\u06cc","callback_data":"start"}]]}
+ref.message_id= 513
+
+
+============[Trace]===========
+#0 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(1862): TelegramErrorLogger::log(Array, Array)
+#1 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(124): Telegram->sendAPIRequest('https://api.tel...', Array)
+#2 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(692): Telegram->endpoint('editMessageText', Array)
+#3 /Users/afsari/PhpstormProjects/telegram_bot_php/functions.php(77): Telegram->editMessageText(Array)
+#4 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_functions.php(223): sendMessage(2020715168, '\xF0\x9F\x94\x90 <b>\xD9\xBE\xD9\x86\xD9\x84 ...', '{"inline_keyboa...', 513)
+#5 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_handler.php(43): sendAdminRootMenu(2020715168, 513)
+#6 /Users/afsari/PhpstormProjects/telegram_bot_php/index.php(28): require_once('/Users/afsari/P...')
+#7 /Applications/Herd.app/Contents/Resources/valet/server.php(167): require('/Users/afsari/P...')
+#8 {main}
+
+============[Date]============
+[ 2025-10-08 18:06:40  UTC ] 
+==========[Response]==========
+ok:			False
+error_code:		400
+description:		Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message
+=========[Sent Data]==========
+[ref]
+ref.update_id= 119060157
+ref.callback_query.id= 8678905561782053090
+ref.callback_query.from.id= 2020715168
+ref.callback_query.from.is_bot= false
+ref.callback_query.from.first_name= Lila
+ref.callback_query.from.username= MetaaVerses
+ref.callback_query.from.language_code= en
+ref.callback_query.message.message_id= 529
+ref.callback_query.message.from.id= 8267056539
+ref.callback_query.message.from.is_bot= true
+ref.callback_query.message.from.first_name= English_With_Us
+ref.callback_query.message.from.username= English_Bot_With_Us_bot
+ref.callback_query.message.chat.id= 2020715168
+ref.callback_query.message.chat.first_name= Lila
+ref.callback_query.message.chat.username= MetaaVerses
+ref.callback_query.message.chat.type= private
+ref.callback_query.message.date= 1759946282
+ref.callback_query.message.edit_date= 1759946706
+ref.callback_query.message.text= سلام Lila
+به فروشگاه آنلاین مدرس انگلیسی خوش آمدید ❤️
+
+⭐️ دروه های آنلاین و کتاب های تخصصی آیلتس
+ref.callback_query.message.entities.0.offset= 5
+ref.callback_query.message.entities.0.length= 4
+ref.callback_query.message.entities.0.type= bold
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.text= خریــــد محصول 🛍️
+ref.callback_query.message.reply_markup.inline_keyboard.0.0.callback_data= buy_product
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.text= سبد خرید 🛒
+ref.callback_query.message.reply_markup.inline_keyboard.1.0.callback_data= view_cart
+ref.callback_query.message.reply_markup.inline_keyboard.1.1.text= سفارشات من ✉️
+ref.callback_query.message.reply_markup.inline_keyboard.1.1.callback_data= my_orders
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.text= راهنما ❓
+ref.callback_query.message.reply_markup.inline_keyboard.2.0.callback_data= help
+ref.callback_query.message.reply_markup.inline_keyboard.2.1.text= پشتیبانی 🗣️
+ref.callback_query.message.reply_markup.inline_keyboard.2.1.callback_data= support
+ref.callback_query.chat_instance= 4392676828707811893
+ref.callback_query.data= my_orders
+
+
+[ref]
+ref.text= این بخش در حال توسعه است.
+ref.parse_mode= HTML
+ref.reply_markup= {"inline_keyboard":[[{"text":"\u0628\u0627\u0632\u06af\u0634\u062a \ud83d\udd19","callback_data":"admin_root"}]]}
+ref.message_id= 529
+
+
+============[Trace]===========
+#0 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(1862): TelegramErrorLogger::log(Array, Array)
+#1 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(124): Telegram->sendAPIRequest('https://api.tel...', Array)
+#2 /Users/afsari/PhpstormProjects/telegram_bot_php/Telegram.php(692): Telegram->endpoint('editMessageText', Array)
+#3 /Users/afsari/PhpstormProjects/telegram_bot_php/functions.php(77): Telegram->editMessageText(Array)
+#4 /Users/afsari/PhpstormProjects/telegram_bot_php/admin_handler.php(425): sendMessage(2020715168, '\xD8\xA7\xDB\x8C\xD9\x86 \xD8\xA8\xD8\xAE\xD8\xB4 \xD8...', '{"inline_keyboa...', 529)
+#5 /Users/afsari/PhpstormProjects/telegram_bot_php/index.php(28): require_once('/Users/afsari/P...')
+#6 /Applications/Herd.app/Contents/Resources/valet/server.php(167): require('/Users/afsari/P...')
+#7 {main}
+

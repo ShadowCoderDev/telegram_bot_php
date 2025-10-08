@@ -10,19 +10,41 @@ if (isset($resultTelegram['callback_query'])) {
     if (strpos($callback_data, 'category_') === 0) {
         global $telegram;
         $category_id = str_replace('category_', '', $callback_data);
+
+        // ✅ مرحله ۱: اطلاعات دسته‌بندی را از دیتابیس دریافت می‌کنیم
+        $category = query("SELECT", "categories", false, [["key"=>"id","condition"=>"=","value"=>$category_id]]);
+        
+        // دریافت لیست محصولات این دسته‌بندی
         $products = query("SELECT", "products", false, [
             ["key"=>"category_id","condition"=>"=","value"=>$category_id],
             ["key"=>"status","condition"=>"=","value"=>"enable"]
         ], true);
 
+        // مقدار پیش‌فرض در صورتی که دسته‌بندی پیدا نشد
+        $category_display_name = "انتخاب شده";
+        if ($category) {
+            // اگر دسته‌بندی پیدا شد، نام و آیکون آن را می‌سازیم
+            $category_display_name = ($category->icon ?? '✨') . " " . htmlspecialchars($category->name);
+        }
+
         $text = "📅 ابتدا محصول مورد نظر خود را انتخاب کنید.\n\n";
-        $text .= "▫️ دسته بندی: ✨ کتاب+ ✨\n\n";
+        
+        // ✅ مرحله ۲: از نام داینامیک در متن پیام استفاده می‌کنیم
+        $text .= "▫️ دسته بندی: " . $category_display_name . "\n\n";
+        
         $text .= "💡 پس از انتخاب محصول، اطلاعات کامل شامل قیمت و ویژگی‌های آن برای شما نمایش داده می‌شود.\n\n";
 
         $option = [];
-        foreach ($products as $product) {
-            $option[] = array($telegram->buildInlineKeyBoardButton($product->title, '', 'product_' . $product->id));
+        
+        // اگر محصولی در این دسته‌بندی نبود، به کاربر اطلاع می‌دهیم
+        if (!$products || count($products) == 0) {
+            $text = "❌ متاسفانه محصول فعالی در دسته‌بندی «" . ($category->name ?? '') . "» وجود ندارد.";
+        } else {
+            foreach ($products as $product) {
+                $option[] = array($telegram->buildInlineKeyBoardButton($product->title, '', 'product_' . $product->id));
+            }
         }
+
         $option[] = array($telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'buy_product'));
         $keyb = $telegram->buildInlineKeyBoard($option);
         sendMessage($chat_id, $text, $keyb, $mesasge_id);
@@ -70,7 +92,8 @@ if (isset($resultTelegram['callback_query'])) {
             ["key"=>"user_id","condition"=>"=","value"=>$user_detail->id]
         ]);
         if (!$active_order) {
-            $order_id = query("CREATE", "orders", ["user_id"=>$user_detail->id, "time"=>time(), "status"=>"pending"]);
+            $track_id = generateTrackId();
+            $order_id = query("CREATE", "orders", ["user_id"=>$user_detail->id, "time"=>time(),"user_chat_id" => $chat_id, "status"=>"pending","trackId" => $track_id ]);
             $active_order = (object)["id"=>$order_id];
         }
 
@@ -159,63 +182,64 @@ if (isset($resultTelegram['callback_query'])) {
         exit;
     }
 
-    // سفارشات من
-// سفارشات من (نسخه اصلاح شده)
-// سفارشات من (نسخه نهایی با نمایش کامل اطلاعات)
+    // سفارشات من 
+
     elseif ($callback_data == 'my_orders') {
-        global $telegram, $conn; // $conn را برای اجرای کوئری مستقیم اضافه می‌کنیم
-        $user_detail = query("SELECT", "users", false, [["key"=>"chat_id","condition"=>"=","value"=>$chat_id]]);
-        $orders = query("SELECT", "orders", false, [
-            ["key"=>"user_id","condition"=>"=","value"=>$user_detail->id],
-            ["key"=>"status","condition"=>"!=","value"=>"pending"]
-        ], true, "id DESC LIMIT 5");
+    global $telegram, $conn;
+    $user_detail = query("SELECT", "users", false, [["key"=>"chat_id","condition"=>"=","value"=>$chat_id]]);
 
-        if (!$orders || count($orders) == 0) {
-            $text = "📑 <b>سفارشات شما</b>\n\n";
-            $text .= "هنوز سفارش تکمیل‌شده‌ای ندارید.";
-            $keyb = $telegram->buildInlineKeyBoard([[ $telegram->buildInlineKeyBoardButton("بازگشت 🏠", '', 'start') ]]);
-            sendMessage($chat_id, $text, $keyb, $mesasge_id);
-        } else {
-            $text = "📑 <b>5 سفارش آخر شما:</b>\n\n";
-            foreach ($orders as $order) {
-                // ۱. محاسبه مبلغ کل برای هر سفارش
-                $sql = "SELECT SUM(products.price * orders_item.quantity) as total
-                    FROM `orders_item`
-                    LEFT JOIN products ON orders_item.product_id = products.id
-                    WHERE orders_item.order_id=:oid";
-                $stmt = $conn->prepare($sql);
-                $stmt->bindValue(':oid', $order->id, PDO::PARAM_INT);
-                $stmt->execute();
-                $result = $stmt->fetch(PDO::FETCH_OBJ);
-                $total_price = $result && $result->total ? intval($result->total) : 0;
+    // ✅ کوئری بهینه شده با JOIN و GROUP BY صحیح
+    $sql = "
+        SELECT
+            o.id, o.status,o.trackId,
+            od.first_name, od.last_name, od.address, od.phone_number,
+            SUM(p.price * oi.quantity) as total_price
+        FROM orders AS o
+        LEFT JOIN orders_item AS oi ON o.id = oi.order_id
+        LEFT JOIN products AS p ON oi.product_id = p.id
+        LEFT JOIN order_details AS od ON o.id = od.order_id
+        WHERE o.user_id = :user_id AND o.status != 'pending'
+        GROUP BY o.id, o.status, od.first_name, od.last_name, od.address, od.phone_number,o.trackId
+        ORDER BY o.id DESC
+        LIMIT 5
+    ";
 
-                // ۲. گرفتن اطلاعات تکمیلی سفارش (نام، آدرس و...)
-                $order_details = query("SELECT", "order_details", false, [["key"=>"order_id","condition"=>"=","value"=>$order->id]]);
+    $stmt = $conn->prepare($sql);
+    $stmt->execute([':user_id' => $user_detail->id]);
+    $orders_with_details = $stmt->fetchAll(PDO::FETCH_OBJ);
 
-                $status_text = 'نامشخص';
-                if($order->status == 'payed') $status_text = '✅ پرداخت شده - در انتظار تایید';
-                if($order->status == 'reject') $status_text = '❌ رد شده';
-                if($order->status == 'cancel') $status_text = '🚫 لغو شده';
+    if (!$orders_with_details || count($orders_with_details) == 0) {
+        $text = "📑 <b>سفارشات شما</b>\n\nهنوز سفارش تکمیل‌شده‌ای ندارید.";
+        $keyb = $telegram->buildInlineKeyBoard([[ $telegram->buildInlineKeyBoardButton("بازگشت 🏠", '', 'start') ]]);
+        sendMessage($chat_id, $text, $keyb, $mesasge_id);
+    } else {
+        $text = "📑 <b>5 سفارش آخر شما:</b>\n\n";
+        foreach ($orders_with_details as $order) {
+            $status_text = 'نامشخص';
+            if($order->status == 'payed') $status_text = '✅ پرداخت شده - در انتظار تایید';
+            if($order->status == 'reject') $status_text = '❌ رد شده';
+            if($order->status == 'cancel') $status_text = '🚫 لغو شده';
+            if($order->status == 'approved') $status_text = '✔️ تایید شده';
 
-                $text .= "🆔 <b>سفارش #{$order->id}</b>\n";
-                if ($order_details) {
-                    $text .= "👤 " . $order_details->first_name . " " . $order_details->last_name . "\n";
-                    // --- شروع خطوط جدید ---
-                    $text .= "📍 آدرس: " . $order_details->address . "\n";
-                    $text .= "📱 تلفن: " . $order_details->phone_number . "\n";
-                    // --- پایان خطوط جدید ---
-                }
-
-                // ۳. نمایش مبلغ محاسبه شده به جای صفر
-                $text .= "💵 جمع کل: " . number_format($total_price) . " تومان\n";
-                $text .= "📌 وضعیت: " . $status_text . "\n";
-                $text .= "────\n\n";
+             $text .= "🆔 <b>کد رهگیری: {$order->trackId}</b>\n";
+            if ($order->first_name) {
+                $text .= "👤 " . $order->first_name . " " . $order->last_name . "\n";
+                $text .= "📍 آدرس: " . $order->address . "\n";
+                $text .= "📱 تلفن: " . $order->phone_number . "\n";
             }
-            $keyb = $telegram->buildInlineKeyBoard([[ $telegram->buildInlineKeyBoardButton("بازگشت 🏠", '', 'start') ]]);
-            sendMessage($chat_id, $text, $keyb, $mesasge_id);
+            // اگر سفارشی آیتم نداشته باشد، total_price ممکن است NULL باشد.
+            $total_price = $order->total_price ?? 0;
+            $text .= "💵 جمع کل: " . number_format($total_price) . " تومان\n";
+            $text .= "📌 وضعیت: " . $status_text . "\n";
+            $text .= "────\n\n";
         }
-        exit;
+        $keyb = $telegram->buildInlineKeyBoard([[ $telegram->buildInlineKeyBoardButton("بازگشت 🏠", '', 'start') ]]);
+        sendMessage($chat_id, $text, $keyb, $mesasge_id);
     }
+    exit;
+    }
+
+
     // راهنما
     if ($callback_data == 'help') {
         global $telegram;
@@ -366,8 +390,7 @@ if (!isset($resultTelegram['callback_query'])) {
         }
     }
 
-    // دریافت عکس فیش در مرحله 4
-// دریافت رسید در مرحله 4 (هم photo هم document تصویری)
+    // دریافت رسید در مرحله 4 (هم photo هم document تصویری)
     if (isset($resultTelegram['message']) && is_array($resultTelegram['message'])) {
         // فقط اگر در مرحله 4 هستیم دنبال رسید بگردیم
         $user_detail = query("SELECT", "users", false, [["key"=>"chat_id","condition"=>"=","value"=>$chat_id]]);
@@ -420,9 +443,13 @@ if (!isset($resultTelegram['callback_query'])) {
                 query("UPDATE", "orders", ["status"=>"payed"], [["key"=>"id","condition"=>"=","value"=>$checkout_state->order_id]]);
                 query("UPDATE", "user_checkout_state", ["step"=>0], [["key"=>"id","condition"=>"=","value"=>$checkout_state->id]]);
 
+                $order_info = query("SELECT", "orders", false, [["key"=>"id","condition"=>"=","value"=>$checkout_state->order_id]]);
+                $track_id_to_show = $order_info ? $order_info->trackId : $checkout_state->order_id;
+
+
                 $txt  = "✅ <b>رسید شما دریافت شد و سفارش برای ادمین ارسال گردید.</b>\n\n";
                 $txt .= "از خرید شما متشکریم 🙏\n\n";
-                $txt .= "🆔 شماره سفارش: #" . $checkout_state->order_id . "\n";
+                $txt .= "🆔 <b>کد رهگیری:</b> " . $track_id_to_show . "\n"; 
                 $txt .= "👤 نام: " . (($step_data['first_name'] ?? '') . " " . ($step_data['last_name'] ?? '')) . "\n";
                 $txt .= "📍 آدرس: " . ($step_data['address'] ?? '') . "\n";
                 $txt .= "📱 تلفن: " . ($step_data['phone'] ?? '') . "\n";

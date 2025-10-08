@@ -161,7 +161,24 @@ function query($action, $table, $fields = false, $wheres = false, $isfetchall = 
                 $item++;
             }
         }
-        if ($order_by) $sql .= (" ORDER BY " . $order_by);
+
+        // if ($order_by) $sql .= (" ORDER BY " . $order_by); --- IGNORE ---
+        if ($order_by) {
+            // لیست ستون‌ها و جهت‌های مجاز برای مرتب‌سازی
+            $allowed_order_by = [
+                'id DESC',
+                'id ASC',
+                'price DESC',
+                'price ASC'
+                // هر ستون دیگه‌ای که لازم داری اضافه کن
+            ];
+            if (in_array($order_by, $allowed_order_by)) {
+                $sql .= " ORDER BY " . $order_by;
+            }
+        }
+
+
+
         $statment = $conn->prepare($sql);
         foreach ($values as $i => $v) $statment->bindValue($i + 1, $v);
         $statment->execute();
@@ -271,3 +288,32 @@ function renderCart($chat_id, $mesasge_id = false) {
 
 
 
+
+/**
+ * Generates a unique tracking ID for an order.
+ * It ensures the generated ID does not already exist in the orders table.
+ * @param int $length The length of the random part of the ID.
+ * @return string The unique tracking ID.
+ */
+function generateTrackId($length = 5) {
+    global $conn; // Access the database connection
+
+    $prefix = "IELTS-"; 
+    
+    do {
+        $characters = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        $randomPart = '';
+        for ($i = 0; $i < $length; $i++) {
+            $randomPart .= $characters[rand(0, strlen($characters) - 1)];
+        }
+        $newTrackId = $prefix . $randomPart;
+
+        // Check for uniqueness in the database
+        $stmt = $conn->prepare("SELECT id FROM orders WHERE trackId = :track_id");
+        $stmt->execute([':track_id' => $newTrackId]);
+        $exists = $stmt->fetch();
+
+    } while ($exists); // Keep looping until a unique ID is found
+
+    return $newTrackId;
+}
