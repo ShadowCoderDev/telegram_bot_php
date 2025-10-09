@@ -135,32 +135,35 @@ function notifyAdminOfNewOrder($order_id)
     // دکمه پیام به خریدار
     global $telegram;
 
+    // آرایه اصلی برای نگهداری تمام ردیف‌های دکمه‌ها
     $option = [];
-    $row1 = [];
-    $row2 = [];
 
-    // اضافه کردن دکمه‌های تایید و رد بر اساس وضعیت فعلی
-    if ($order->status !== 'approved') {
-        $row1[] = $telegram->buildInlineKeyBoardButton("✅ تایید", '', 'admin_order_approve_' . $order->id);
-    }
-    if ($order->status !== 'rejected') {
-        $row1[] = $telegram->buildInlineKeyBoardButton("❌ رد", '', 'admin_order_reject_' . $order->id);
-    }
-    if (!empty($row1)) {
-        $option[] = $row1;
-    }
+    // با توجه به وضعیت سفارش، دکمه‌های عملیاتی مناسب را به آرایه اضافه کن
+    $option = [];
+    switch ($order->status) {
+        case 'payed': // اگر تازه پرداخت شده
+            $option[] = [ 
+                $telegram->buildInlineKeyBoardButton("✅ تایید سفارش", '', 'admin_order_approve_'.$order->id),
+                $telegram->buildInlineKeyBoardButton("❌ رد سفارش", '', 'admin_order_reject_'.$order->id)
+                    ];
+            break;
+        case 'rejected': // اگر رد شده
+            $option[] = [ $telegram->buildInlineKeyBoardButton("✅ تایید سفارش", '', 'admin_order_approve_'.$order->id) ];
+            break;
 
-    // اضافه کردن دکمه ارسال بر اساس وضعیت فعلی
-    if ($order->status !== 'sending') {
-        $row2[] = $telegram->buildInlineKeyBoardButton("📤 ارسال شد", '', 'admin_order_send_' . $order->id);
-    }
-
-    // دکمه پیام به خریدار همیشه نمایش داده می‌شود
-    $row2[] = $telegram->buildInlineKeyBoardButton("✉️ پیام به خریدار", '', 'admin_contact_buyer_' . $order->id);
-    if (!empty($row2)) {
-        $option[] = $row2;
+        case 'approved': // اگر تایید شده
+            $option[] = [ 
+                $telegram->buildInlineKeyBoardButton("📤 ارسال محصول به مشتری", '', 'admin_order_send_'.$order->id),
+                $telegram->buildInlineKeyBoardButton("❌ رد سفارش", '', 'admin_order_reject_'.$order->id)
+                    ];
+            break;
     }
 
+    // دکمه "پیام به خریدار" و "بازگشت" همیشه در ردیف‌های جداگانه نمایش داده می‌شوند
+    $option[] = [ $telegram->buildInlineKeyBoardButton("✉️ پیام به خریدار", '', 'admin_contact_buyer_' . $order->id) ];
+    $option[] = [ $telegram->buildInlineKeyBoardButton("🔙 بازگشت به لیست", '', 'admin_orders_paid') ];
+
+    // ساخت کیبورد نهایی با آرایه تنظیم شده
     $kb = $telegram->buildInlineKeyBoard($option);
 
 
@@ -452,17 +455,23 @@ function showOrderDetailsToAdmin($chat_id, $order_id, $mesasge_id = false)
     $txt .= "──────────────\n💰 جمع کل: <b>" . number_format($total) . " تومان</b>";
 
     $opt = [];
-    // تایید/رد برای ادمین
-    if ($order->status !== 'approved') {
-        $opt[] = [$telegram->buildInlineKeyBoardButton("✅ تایید سفارش", '', 'admin_order_approve_' . $order->id)];
-    }
-    if ($order->status !== 'rejected') {
-        $opt[] = [$telegram->buildInlineKeyBoardButton("❌ رد سفارش", '', 'admin_order_reject_' . $order->id)];
-    }
+    switch ($order->status) {
+        case 'payed': // اگر تازه پرداخت شده
+            $opt[] = [ 
+                $telegram->buildInlineKeyBoardButton("✅ تایید سفارش", '', 'admin_order_approve_'.$order->id),
+                $telegram->buildInlineKeyBoardButton("❌ رد سفارش", '', 'admin_order_reject_'.$order->id)
+                    ];
+            break;
+        case 'rejected': // اگر رد شده
+            $opt[] = [ $telegram->buildInlineKeyBoardButton("✅ تایید سفارش", '', 'admin_order_approve_'.$order->id) ];
+            break;
 
-    // ارسال به خریدار
-    if ($order->status !== 'sending') {
-        $opt[] = [$telegram->buildInlineKeyBoardButton("📤 ارسال محصول به مشتری", '', 'admin_order_send_' . $order->id)];
+        case 'approved': // اگر تایید شده
+            $opt[] = [ 
+                $telegram->buildInlineKeyBoardButton("📤 ارسال محصول به مشتری", '', 'admin_order_send_'.$order->id),
+                $telegram->buildInlineKeyBoardButton("❌ رد سفارش", '', 'admin_order_reject_'.$order->id)
+                    ];
+            break;
     }
 
     // پیام به خریدار (اگر chat_id داریم)

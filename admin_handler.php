@@ -784,12 +784,15 @@ if ($text_message || !empty($update['message'])) {
             log_tg("STATE: add_product -> step 3");
             exit;
         } elseif ($step === '3') {
-            if (!is_numeric($text_message)) {
+
+
+            $price = convertNumbersToEnglish($text_message);
+            if (!is_numeric($price)) {
                 sendMessage($chat_id, "❌ لطفاً قیمت را فقط به صورت عدد وارد کنید.", build_back_to_admin_panel_inline());
                 log_tg("STATE_ERR: price not numeric");
                 exit;
             }
-            $step_data['price'] = (int)$text_message;
+            $step_data['price'] = (int)$price;
             query("UPDATE", "admin_process_state",
                 ["step" => 4, "step_data" => json_encode($step_data, JSON_UNESCAPED_UNICODE)],
                 [["key"=>"id","condition"=>"=","value"=>$admin_state->id]]
@@ -807,12 +810,13 @@ if ($text_message || !empty($update['message'])) {
             log_tg("STATE: add_product -> step 5");
             exit;
         } elseif ($step === '5') {
-            if (!is_numeric($text_message)) {
+            $inventory = convertNumbersToEnglish($text_message);
+            if (!is_numeric($inventory)) {
                 sendMessage($chat_id, "❌ لطفاً موجودی را فقط به صورت عدد وارد کنید.", build_back_to_admin_panel_inline());
                 log_tg("STATE_ERR: inventory not numeric");
                 exit;
             }
-            $step_data['inventory'] = (int)$text_message;
+            $step_data['inventory'] = (int)$inventory;
             query("UPDATE", "admin_process_state",
                 ["step" => 6, "step_data" => json_encode($step_data, JSON_UNESCAPED_UNICODE)],
                 [["key"=>"id","condition"=>"=","value"=>$admin_state->id]]
@@ -916,7 +920,9 @@ if ($text_message || !empty($update['message'])) {
                 exit;
             }
         } else { // برای سایر فیلدها مثل قبل عمل کن
-            $final_value = isset($text_message) ? trim($text_message) : null;
+            $inputValue = convertNumbersToEnglish($text_message);
+
+            $final_value = isset($inputValue) ? trim($inputValue) : null;
             if ($field === 'price' || $field === 'inventory') {
                 if (!is_numeric($final_value)) {
                     sendMessage($chat_id, "❌ لطفاً مقدار عددی معتبر وارد کنید.", build_back_to_admin_panel_inline());

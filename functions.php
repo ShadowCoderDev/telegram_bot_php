@@ -93,7 +93,7 @@ function sendMainKeyboardMenu($chat_id, $mesasge_id = false) {
     $option = array(
         array($telegram->buildInlineKeyBoardButton("خریــــد محصول 🛍️", '', 'buy_product')),
         array($telegram->buildInlineKeyBoardButton("سبد خرید 🛒", '', 'view_cart'), $telegram->buildInlineKeyBoardButton("سفارشات من ✉️", '', 'my_orders')),
-        array($telegram->buildInlineKeyBoardButton("راهنما ❓", '', 'help'), $telegram->buildInlineKeyBoardButton("پشتیبانی 🗣️", '', 'support')),
+        array($telegram->buildInlineKeyBoardButton("راهنمای سریع ⚡️", '', 'help'), $telegram->buildInlineKeyBoardButton("پشتیبانی 🗣️", '', 'support')),
         array($telegram->buildInlineKeyBoardButton("سوالات متداول ❓", '', 'show_faqs')),
     );
     $keyb = $telegram->buildInlineKeyBoard($option);
@@ -567,11 +567,30 @@ function sendUserPersistentKeyboard($chat_id) {
         ['🛍️ خرید محصول'],
         ['🛒 سبد خرید', '✉️ سفارشات من'],
         // دکمه راهنما به سوالات متداول تغییر کرد
-        ['🗣️ پشتیبانی', '❓ سوالات متداول']
+        ['🗣️ پشتیبانی', '❓ سوالات متداول'],
+        ['🏠 پنل اصلی'],
+
     ];
     $keyb = $telegram->buildKeyBoard($option, $onetime = false, $resize = true);
     sendMessage($chat_id,  "از منوی پایین برای دسترسی سریع استفاده کنید 👇", $keyb);
 }
 
+// functions.php
 
+/**
+ * اعداد فارسی و عربی را به معادل انگلیسی (ASCII) تبدیل می‌کند.
+ * @param string $string رشته ورودی که ممکن است شامل اعداد فارسی/عربی باشد.
+ * @return string رشته با اعداد تبدیل شده.
+ */
+function convertNumbersToEnglish($string) {
+    $persian = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+    $arabic = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+    $english = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+    // ابتدا اعداد فارسی به انگلیسی و سپس اعداد عربی به انگلیسی تبدیل می‌شوند
+    $output = str_replace($persian, $english, $string);
+    $output = str_replace($arabic, $english, $output);
+    
+    return $output;
+}
 

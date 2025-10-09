@@ -335,7 +335,8 @@ if (isset($resultTelegram['callback_query'])) {
 if (!isset($resultTelegram['callback_query'])) {
 
     // /start
-    if ($text == "/start") {
+    $main_panel = '🏠 پنل اصلی';
+    if ($text == "/start" || $text == $main_panel){
         $getUser = query("SELECT", "users", false, [["key" => "chat_id", "condition" => "=", "value" => $chat_id]]);
         if (!$getUser)
             query("CREATE", "users", ["chat_id" => $chat_id, "name" => $telegram->FirstName(), "status" => "enable"]);
@@ -464,10 +465,11 @@ if (!isset($resultTelegram['callback_query'])) {
 
             // مرحله 3: تلفن
             if ($step == 3 && $text && $text[0] != '/') {
-                if (preg_match('/^09\d{9}$/', $text)) {
+                $phoneNumber = convertNumbersToEnglish($text);
+                if (preg_match('/^09\d{9}$/', $phoneNumber)) {
                     global $conn;
                     $step_data = json_decode($checkout_state->step_data, true) ?: [];
-                    $step_data['phone'] = $text;
+                    $step_data['phone'] = $phoneNumber;
 
                     $sql = "SELECT SUM(products.price * orders_item.quantity) as total
                             FROM `orders_item`
