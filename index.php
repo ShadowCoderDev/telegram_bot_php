@@ -1,4 +1,5 @@
 <?php
+date_default_timezone_set('Asia/Tehran');
 
 //ini_set('display_errors', 1); // این خطوط را برای دیباگ نگه دارید
 //error_reporting(E_ALL);

@@ -374,9 +374,11 @@ function listPaidOrders($chat_id, $mesasge_id = false)
     }
     $opt = [];
     foreach ($rows as $o) {
-        $date_time = date('Y-m-d H:i', $o->time);
-        // Show trackId in the button
-        $cap = "🧾 " . ($o->trackId ?? "#" . $o->id) . " — {$o->status} — {$date_time}";
+        // ✅✅✅ استفاده از توابع جدید برای فارسی‌سازی ✅✅✅
+        $persian_status = translate_status_to_persian($o->status);
+        $persian_date = format_persian_date($o->time);
+        
+        $cap = "🧾 " . ($o->trackId ?? "#" . $o->id) . " — {$persian_status} — {$persian_date}";
         $opt[] = [$telegram->buildInlineKeyBoardButton($cap, '', 'admin_order_view_' . $o->id)];
     }
     $opt[] = [$telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'admin_root')];
