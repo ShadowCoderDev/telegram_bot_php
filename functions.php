@@ -94,6 +94,7 @@ function sendMainKeyboardMenu($chat_id, $mesasge_id = false) {
         array($telegram->buildInlineKeyBoardButton("خریــــد محصول 🛍️", '', 'buy_product')),
         array($telegram->buildInlineKeyBoardButton("سبد خرید 🛒", '', 'view_cart'), $telegram->buildInlineKeyBoardButton("سفارشات من ✉️", '', 'my_orders')),
         array($telegram->buildInlineKeyBoardButton("راهنما ❓", '', 'help'), $telegram->buildInlineKeyBoardButton("پشتیبانی 🗣️", '', 'support')),
+        array($telegram->buildInlineKeyBoardButton("سوالات متداول ❓", '', 'show_faqs')),
     );
     $keyb = $telegram->buildInlineKeyBoard($option);
     $text = "سلام <b>" . $telegram->FirstName() . "</b>\n";

@@ -286,6 +286,46 @@ if (isset($resultTelegram['callback_query'])) {
         exit;
     }
 
+
+    // جایگزین کردن بخش راهنما با سوالات متداول
+    if ($callback_data == 'show_faqs') {
+        global $telegram;
+        $faqs = query("SELECT", "faqs", false, [["key"=>"status","condition"=>"=","value"=>"enable"]], true, "id ASC");
+
+        if (!$faqs || count($faqs) == 0) {
+            $text = "❓ بخشی برای سوالات متداول تعریف نشده است.";
+            $keyb = $telegram->buildInlineKeyBoard([[ $telegram->buildInlineKeyBoardButton("بازگشت 🏠", '', 'start') ]]);
+            sendMessage($chat_id, $text, $keyb, $mesasge_id);
+            exit;
+        }
+
+        $text = "❓ <b>سوالات متداول</b>\n\nلطفاً سوال خود را از لیست زیر انتخاب کنید تا پاسخ آن نمایش داده شود:\n\n";
+        $option = [];
+        foreach ($faqs as $faq) {
+            $option[] = array($telegram->buildInlineKeyBoardButton("▫️ " . $faq->question, '', 'faq_answer_' . $faq->id));
+        }
+        $option[] = array($telegram->buildInlineKeyBoardButton("بازگشت 🏠", '', 'start'));
+        $keyb = $telegram->buildInlineKeyBoard($option);
+        sendMessage($chat_id, $text, $keyb, $mesasge_id);
+        exit;
+    }
+
+    // نمایش پاسخ سوال
+    if (strpos($callback_data, 'faq_answer_') === 0) {
+        global $telegram;
+        $faq_id = str_replace('faq_answer_', '', $callback_data);
+        $faq = query("SELECT", "faqs", false, [["key"=>"id","condition"=>"=","value"=>$faq_id]]);
+
+        if ($faq) {
+            $text = "❓ <b>سوال:</b>\n" . $faq->question . "\n\n";
+            $text .= "✅ <b>پاسخ:</b>\n" . $faq->answer;
+            $keyb = $telegram->buildInlineKeyBoard([[ $telegram->buildInlineKeyBoardButton("بازگشت به لیست سوالات 🔙", '', 'show_faqs') ]]);
+            sendMessage($chat_id, $text, $keyb, $mesasge_id);
+        }
+        exit;
+    }
+
+
     // راهنما
     if ($callback_data == 'help') {
         // متن استاتیک قبلی را حذف و این کد را جایگزین کنید

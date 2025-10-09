@@ -212,7 +212,7 @@ function send_quick_admin_reply_keyboard($chat_id)
     if (!method_exists($telegram, 'buildKeyBoard'))
         return;
     $rkey = $telegram->buildKeyBoard(
-        [["/admin"]],
+        [["پنل ادمین"]],
         $onetime = false,
         $resize = true,
         $selective = false
@@ -263,6 +263,8 @@ function sendAdminRootMenu($chat_id, $mesasge_id = false)
     global $telegram;
 
     $kb = $telegram->buildInlineKeyBoard([
+        [ $telegram->buildInlineKeyBoardButton("❓ مدیریت سوالات متداول", '', 'admin_manage_faqs') ],
+
         [
             $telegram->buildInlineKeyBoardButton("📊 آمار کلی", '', 'admin_stats'),
             $telegram->buildInlineKeyBoardButton("🧾 مدیریت سفارشات", '', 'admin_orders_paid')
@@ -301,6 +303,30 @@ function sendAdminRootMenu($chat_id, $mesasge_id = false)
     // ]);
     $txt = "🔐 <b>پنل مدیریت</b>\n\nیکی از گزینه‌ها را انتخاب کن:";
     sendMessage($chat_id, $txt, $kb, $mesasge_id);
+}
+
+// تابع جدید برای نمایش لیست سوالات متداول به ادمین
+function listFaqsManage($chat_id, $mesasge_id=false) {
+    global $telegram;
+    $faqs = query("SELECT","faqs",false,false,true,"id DESC");
+
+    $opt = [];
+    $opt[] = [ $telegram->buildInlineKeyBoardButton("➕ افزودن سوال جدید", '', 'admin_add_faq') ];
+
+    if ($faqs && count($faqs) > 0) {
+        foreach ($faqs as $f){
+            $status = ($f->status==='enable' ? '✅' : '⛔');
+            $name = mb_substr($f->question, 0, 40) . '...';
+            $opt[] = [
+                $telegram->buildInlineKeyBoardButton($status." ".$name, '', 'noop'),
+                $telegram->buildInlineKeyBoardButton(($f->status==='enable'?'غیرفعال‌سازی':'فعال‌سازی'), '', 'admin_toggle_faq_'.$f->id)
+            ];
+        }
+    }
+
+    $opt[] = [ $telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', 'admin_root') ];
+    $kb = $telegram->buildInlineKeyBoard($opt);
+    sendMessage($chat_id, "❓ <b>مدیریت سوالات متداول</b>:", $kb, $mesasge_id);
 }
 
 

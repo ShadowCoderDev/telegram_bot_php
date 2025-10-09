@@ -136,7 +136,34 @@ if ($callback_data) {
     }
 
 
+    if ($callback_data === 'admin_manage_faqs') {
+        listFaqsManage($chat_id, $mesasge_id);
+        exit;
+    }
 
+    if (strpos($callback_data, 'admin_toggle_faq_') === 0) {
+        $fid = (int)str_replace('admin_toggle_faq_', '', $callback_data);
+        $faq = query("SELECT","faqs",false,[["key"=>"id","condition"=>"=","value"=>$fid]]);
+        if ($faq) {
+            $new = ($faq->status==='enable'?'disable':'enable');
+            query("UPDATE","faqs",["status"=>$new],[["key"=>"id","condition"=>"=","value"=>$fid]]);
+            sendMessage($chat_id,"✅ وضعیت سوال به <b>{$new}</b> تغییر کرد.");
+            listFaqsManage($chat_id);
+        }
+        exit;
+    }
+
+    if ($callback_data === 'admin_add_faq') {
+        $stmt = $conn->prepare("DELETE FROM admin_process_state WHERE admin_user_id = :cid");
+        $stmt->execute([':cid' => $chat_id]);
+        query("CREATE", "admin_process_state", [
+            "admin_user_id" => $chat_id,
+            "process_name"  => "add_faq",
+            "step"          => 1
+        ]);
+        sendMessage($chat_id, "<b>مرحله ۱: افزودن سوال</b>\n\nلطفاً «سوال» را به صورت کامل وارد کنید:\n(برای لغو /cancel)");
+        exit;
+    }
 
     // --- START: Category Deletion Process ---
 
@@ -611,7 +638,7 @@ if ($text_message || !empty($update['message'])) {
     if ($text_message === '/admin' || $text_message === '/start') {
         sendAdminRootMenu($chat_id, $mesasge_id);
         // کیبورد همیشگی /admin را هم بفرستیم (یک‌بار هر بار)
-        send_quick_admin_reply_keyboard($chat_id);
+//        send_quick_admin_reply_keyboard($chat_id);
         exit;
     }
 
@@ -658,6 +685,32 @@ if ($text_message || !empty($update['message'])) {
     $process_name = $admin_state->process_name;
     $step = (string) $admin_state->step;
     $step_data = json_decode($admin_state->step_data ?? "{}", true) ?: [];
+
+
+
+    /* ----------------- افزودن سوال متداول ----------------- */
+    if ($process_name === 'add_faq') {
+        if ($step === '1') { // دریافت سوال
+            $step_data['question'] = $text_message;
+            query("UPDATE", "admin_process_state",
+                ["step" => 2, "step_data" => json_encode($step_data, JSON_UNESCAPED_UNICODE)],
+                [["key"=>"id","condition"=>"=","value"=>$admin_state->id]]
+            );
+            sendMessage($chat_id, "<b>مرحله ۲:</b>\n\nحالا «پاسخ» این سوال را وارد کنید:\n(برای لغو /cancel)");
+            exit;
+        } elseif ($step === '2') { // دریافت پاسخ و ذخیره
+            $step_data['answer'] = $text_message;
+            query("CREATE", "faqs", [
+                "question" => $step_data['question'],
+                "answer"   => $step_data['answer'],
+                "status" => "enable"
+            ]);
+            $conn->prepare("DELETE FROM admin_process_state WHERE id = :id")->execute([':id' => $admin_state->id]);
+            sendMessage($chat_id, "✅ سوال جدید با موفقیت اضافه شد.", build_back_to_admin_panel_inline());
+            exit;
+        }
+    }
+
 
     /* ----------------- افزودن دسته ----------------- */
     if ($process_name === 'add_category') {
