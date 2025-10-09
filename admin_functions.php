@@ -205,19 +205,18 @@ if (is_object($telegram) && method_exists($telegram, 'Text')) {
 }
 
 /* ---------- کمک‌توابع کیبورد ---------- */
-function send_quick_admin_reply_keyboard($chat_id)
-{
-    // یک کیبورد همیشگی با دکمه /admin
+function send_quick_admin_reply_keyboard($chat_id) {
     global $telegram;
-    if (!method_exists($telegram, 'buildKeyBoard'))
-        return;
+    if (!method_exists($telegram, 'buildKeyBoard')) return;
     $rkey = $telegram->buildKeyBoard(
-        [["پنل ادمین"]],
-        $onetime = false,
-        $resize = true,
-        $selective = false
+        [
+            ['پنل ادمین 🏠'] 
+        ],
+        $onetime=false,
+        $resize=true,
+        $selective=false
     );
-    sendMessage($chat_id, "می‌تونی هر زمان خواستی از دکمه /admin پایین استفاده کنی.", $rkey);
+    sendMessage($chat_id,  "از منوی پایین برای دسترسی سریع استفاده کنید 👇", $rkey);
 }
 
 function build_back_to_admin_panel_inline()

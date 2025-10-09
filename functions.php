@@ -407,3 +407,171 @@ function format_persian_date($timestamp) {
     $english_digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
     return str_replace($english_digits, $persian_digits, $jalali_date_str);
 }
+
+
+
+
+/**
+ * نمایش لیست سفارشات کاربر (نسخه جدید و بهینه)
+ */
+function renderMyOrders($chat_id, $mesasge_id = false) {
+        global $telegram, $conn;
+        $user_detail = query("SELECT", "users", false, [["key" => "chat_id", "condition" => "=", "value" => $chat_id]]);
+
+        // مرحله ۱: دریافت اطلاعات کلی ۵ سفارش آخر
+        $sql_orders = "
+            SELECT
+                o.id, o.status, o.trackId,
+                od.first_name, od.last_name, od.address, od.phone_number,
+                SUM(oi.price * oi.quantity) as total_price
+            FROM orders AS o
+            LEFT JOIN orders_item AS oi ON o.id = oi.order_id
+            LEFT JOIN order_details AS od ON o.id = od.order_id
+            WHERE o.user_id = :user_id AND o.status != 'pending'
+            GROUP BY o.id, o.status, o.trackId, od.first_name, od.last_name, od.address, od.phone_number
+            ORDER BY o.id DESC
+            LIMIT 5
+        ";
+        $stmt_orders = $conn->prepare($sql_orders);
+        $stmt_orders->execute([':user_id' => $user_detail->id]);
+        $orders_with_details = $stmt_orders->fetchAll(PDO::FETCH_OBJ);
+
+        if (!$orders_with_details || count($orders_with_details) == 0) {
+            $text = "📑 <b>سفارشات شما</b>\n\nهنوز سفارش تکمیل‌شده‌ای ندارید.";
+            $keyb = $telegram->buildInlineKeyBoard([[$telegram->buildInlineKeyBoardButton("بازگشت 🏠", '', 'start')]]);
+            sendMessage($chat_id, $text, $keyb, $mesasge_id);
+        } else {
+            // مرحله ۲: دریافت تمام آیتم‌های مربوط به سفارشات بالا
+            $order_ids = array_map(function ($order) {
+                return $order->id;
+            }, $orders_with_details);
+
+            $items_by_order_id = [];
+            if (!empty($order_ids)) {
+                $in_placeholders = implode(',', array_fill(0, count($order_ids), '?'));
+
+                $sql_items = "SELECT order_id, product_title, quantity, price FROM orders_item WHERE order_id IN ($in_placeholders)";
+                $stmt_items = $conn->prepare($sql_items);
+                $stmt_items->execute($order_ids);
+                $all_items = $stmt_items->fetchAll(PDO::FETCH_OBJ);
+
+                foreach ($all_items as $item) {
+                    $items_by_order_id[$item->order_id][] = $item;
+                }
+            }
+
+            // مرحله ۳: نمایش اطلاعات کامل به کاربر
+            $text = "📑 <b>5 سفارش آخر شما:</b>\n\n";
+            foreach ($orders_with_details as $order) {
+                $status_text = 'نامشخص';
+                if ($order->status == 'payed')
+                    $status_text = '✅ پرداخت شده - در انتظار تایید';
+                if ($order->status == 'rejected')
+                    $status_text = '❌ رد شده';
+                if ($order->status == 'cancel')
+                    $status_text = '🚫 لغو شده';
+                if ($order->status == 'approved')
+                    $status_text = '✔️ تایید شده';
+                if ($order->status == 'sending')
+                    $status_text = '📤 در حال ارسال';
+
+                $text .= "🆔 <b>کد رهگیری: {$order->trackId}</b>\n";
+                if ($order->first_name) {
+                    $text .= "👤 " . $order->first_name . " " . $order->last_name . "\n";
+                    // ✅✅✅ این دو خط دوباره اضافه شدند ✅✅✅
+                    $text .= "📍 آدرس: " . htmlspecialchars($order->address) . "\n";
+                    $text .= "📱 تلفن: " . htmlspecialchars($order->phone_number) . "\n";
+                }
+
+                $text .= "<b>محصولات خریداری شده:</b>\n";
+                if (!empty($items_by_order_id[$order->id])) {
+                    foreach ($items_by_order_id[$order->id] as $order_item) {
+                        $item_line = "   • <i>" . htmlspecialchars($order_item->product_title) . "</i> (تعداد: {$order_item->quantity} - قیمت فی: " . number_format($order_item->price) . " تومان)\n";
+                        $text .= $item_line;
+                    }
+                }
+
+                $total_price = $order->total_price ?? 0;
+                $text .= "💵 <b>جمع کل:</b> " . number_format($total_price) . " تومان\n";
+                $text .= "📌 <b>وضعیت:</b> " . $status_text . "\n";
+                $text .= "────\n\n";
+            }
+            $keyb = $telegram->buildInlineKeyBoard([[$telegram->buildInlineKeyBoardButton("بازگشت 🏠", '', 'start')]]);
+            sendMessage($chat_id, $text, $keyb, $mesasge_id);
+        }
+        exit;
+}
+
+/**
+ * نمایش لیست سوالات متداول (FAQ)
+ */
+function renderFAQs($chat_id, $mesasge_id = false) {
+    global $telegram;
+    $faqs = query("SELECT", "faqs", false, [["key"=>"status","condition"=>"=","value"=>"enable"]], true, "id ASC");
+
+    if (!$faqs || count($faqs) == 0) {
+        $text = "❓ بخشی برای سوالات متداول تعریف نشده است.";
+        $keyb = $telegram->buildInlineKeyBoard([[ $telegram->buildInlineKeyBoardButton("بازگشت 🏠", '', 'start') ]]);
+    } else {
+        $text = "❓ <b>سوالات متداول</b>\n\nلطفاً سوال خود را از لیست زیر انتخاب کنید تا پاسخ آن نمایش داده شود:\n\n";
+        $option = [];
+        foreach ($faqs as $faq) {
+            $option[] = array($telegram->buildInlineKeyBoardButton("▫️ " . $faq->question, '', 'faq_answer_' . $faq->id));
+        }
+        $option[] = array($telegram->buildInlineKeyBoardButton("بازگشت 🏠", '', 'start'));
+        $keyb = $telegram->buildInlineKeyBoard($option);
+    }
+    sendMessage($chat_id, $text, $keyb, $mesasge_id);
+}
+
+/**
+ * نمایش راهنمای ربات (نسخه داینامیک)
+ */
+function renderHelp($chat_id, $mesasge_id = false) {
+    global $telegram;
+    $help_setting = query("SELECT", "settings", false, [["key"=>"setting_key","condition"=>"=","value"=>"help_text"]]);
+    $help_text = $help_setting ? $help_setting->setting_value : "راهنما هنوز تنظیم نشده است.";
+    
+    $text = "❓ <b>راهنمای ربات</b>\n\n" . $help_text;
+    $keyb = $telegram->buildInlineKeyBoard([[ $telegram->buildInlineKeyBoardButton("بازگشت 🏠", '', 'start') ]]);
+    sendMessage($chat_id, $text, $keyb, $mesasge_id);
+}
+
+
+/**
+ * نمایش اطلاعات پشتیبانی
+ */
+function renderSupport($chat_id, $mesasge_id = false) {
+    global $telegram;
+    
+    // خواندن آیدی پشتیبانی از دیتابیس
+    $setting = query("SELECT", "settings", false, [["key"=>"setting_key","condition"=>"=","value"=>"support"]]);
+    
+    $support_id = $setting ? $setting->setting_value : "پشتیبانی تنظیم نشده"; // یک مقدار پیش‌فرض
+
+    $text = "🗣️ <b>تماس با پشتیبانی</b>\n\n";
+    $text .= "شما می‌توانید سوالات، مشکلات و پیشنهادات خود را از طریق آیدی تلگرام زیر با ما در میان بگذارید:\n\n";
+    $text .= "<b>" . $support_id . "</b>";
+
+    $keyb = $telegram->buildInlineKeyBoard([[ $telegram->buildInlineKeyBoardButton("بازگشت 🏠", '', 'start') ]]);
+    
+    sendMessage($chat_id, $text, $keyb, $mesasge_id);
+}
+
+
+
+
+function sendUserPersistentKeyboard($chat_id) {
+    global $telegram;
+    $option = [
+        ['🛍️ خرید محصول'],
+        ['🛒 سبد خرید', '✉️ سفارشات من'],
+        // دکمه راهنما به سوالات متداول تغییر کرد
+        ['🗣️ پشتیبانی', '❓ سوالات متداول']
+    ];
+    $keyb = $telegram->buildKeyBoard($option, $onetime = false, $resize = true);
+    sendMessage($chat_id,  "از منوی پایین برای دسترسی سریع استفاده کنید 👇", $keyb);
+}
+
+
+

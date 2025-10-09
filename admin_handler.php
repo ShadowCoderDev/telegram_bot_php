@@ -658,10 +658,11 @@ if ($text_message || !empty($update['message'])) {
         exit;
     }
 
-    if ($text_message === '/admin' || $text_message === '/start') {
+    $admin_panel_home = 'پنل ادمین 🏠';
+    if ($text_message === $admin_panel_home || $text_message === '/start') {
         sendAdminRootMenu($chat_id, $mesasge_id);
         // کیبورد همیشگی /admin را هم بفرستیم (یک‌بار هر بار)
-//        send_quick_admin_reply_keyboard($chat_id);
+       send_quick_admin_reply_keyboard($chat_id);
         exit;
     }
 
