@@ -1,0 +1,14 @@
+/.env
+*.log
+*.png
+*.jpg
+*.txt
+*.env
+.log
+**/*.log
+**/*.txt
+
+.env
+
+/logs/
+*.log

@@ -510,6 +510,29 @@ if ($callback_data) {
     }
     if (strpos($callback_data, 'admin_order_approve_') === 0) {
         $oid = (int) str_replace('admin_order_approve_', '', $callback_data);
+
+        // --- شروع بخش جدید: کاهش موجودی ---
+        $order_items = query("SELECT", "orders_item", false, [["key"=>"order_id","condition"=>"=","value"=>$oid]], true);
+        
+        // چک کردن موجودی قبل از تایید نهایی
+        foreach ($order_items as $item) {
+            $product = query("SELECT", "products", false, [["key"=>"id","condition"=>"=","value"=>$item->product_id]]);
+            if (!$product || $product->inventory < $item->quantity) {
+                $error_msg = "⚠️ <b>خطا در تایید سفارش #{$oid}</b>\n\n";
+                $error_msg .= "موجودی محصول '<b>" . ($product->title ?? 'ناشناخته') . "</b>' کافی نیست.\n";
+                $error_msg .= "موجودی فعلی: " . ($product->inventory ?? 0) . " | تعداد درخواستی: " . $item->quantity;
+                sendMessage($chat_id, $error_msg);
+                exit; // عملیات را متوقف کن
+            }
+        }
+
+        // اگر موجودی کافی بود، آن را کاهش بده
+        foreach ($order_items as $item) {
+            $conn->prepare("UPDATE products SET inventory = inventory - :qty WHERE id = :pid")
+                 ->execute([':qty' => $item->quantity, ':pid' => $item->product_id]);
+        }
+        // --- پایان بخش جدید ---
+
         query("UPDATE", "orders", ["status" => "approved"], [["key" => "id", "condition" => "=", "value" => $oid]]);
         sendMessage($chat_id, "✅ سفارش #{$oid} تایید شد.");
         showOrderDetailsToAdmin($chat_id, $oid);
@@ -743,22 +766,18 @@ if ($text_message || !empty($update['message'])) {
     if ($process_name === 'add_product') {
         if ($step === '1') {
             $step_data['title'] = $text_message;
-            query(
-                "UPDATE",
-                "admin_process_state",
+            query("UPDATE", "admin_process_state",
                 ["step" => 2, "step_data" => json_encode($step_data, JSON_UNESCAPED_UNICODE)],
-                [["key" => "id", "condition" => "=", "value" => $admin_state->id]]
+                [["key"=>"id","condition"=>"=","value"=>$admin_state->id]]
             );
             sendMessage($chat_id, "<b>مرحله ۲:</b>\n\nتوضیحات محصول را وارد کنید:\n(برای لغو /cancel)");
             log_tg("STATE: add_product -> step 2");
             exit;
         } elseif ($step === '2') {
             $step_data['description'] = $text_message;
-            query(
-                "UPDATE",
-                "admin_process_state",
+            query("UPDATE", "admin_process_state",
                 ["step" => 3, "step_data" => json_encode($step_data, JSON_UNESCAPED_UNICODE)],
-                [["key" => "id", "condition" => "=", "value" => $admin_state->id]]
+                [["key"=>"id","condition"=>"=","value"=>$admin_state->id]]
             );
             sendMessage($chat_id, "<b>مرحله ۳:</b>\n\nقیمت محصول را به تومان (فقط عدد) وارد کنید:\n(برای لغو /cancel)");
             log_tg("STATE: add_product -> step 3");
@@ -769,34 +788,67 @@ if ($text_message || !empty($update['message'])) {
                 log_tg("STATE_ERR: price not numeric");
                 exit;
             }
-            $step_data['price'] = (int) $text_message;
-            query(
-                "UPDATE",
-                "admin_process_state",
+            $step_data['price'] = (int)$text_message;
+            query("UPDATE", "admin_process_state",
                 ["step" => 4, "step_data" => json_encode($step_data, JSON_UNESCAPED_UNICODE)],
-                [["key" => "id", "condition" => "=", "value" => $admin_state->id]]
+                [["key"=>"id","condition"=>"=","value"=>$admin_state->id]]
             );
             sendMessage($chat_id, "<b>مرحله ۴:</b>\n\nنام نویسنده/مدرس را وارد کنید:\n(برای لغو /cancel)");
             log_tg("STATE: add_product -> step 4");
             exit;
         } elseif ($step === '4') {
             $step_data['author'] = $text_message;
-            query(
-                "UPDATE",
-                "admin_process_state",
+            query("UPDATE", "admin_process_state",
                 ["step" => 5, "step_data" => json_encode($step_data, JSON_UNESCAPED_UNICODE)],
-                [["key" => "id", "condition" => "=", "value" => $admin_state->id]]
+                [["key"=>"id","condition"=>"=","value"=>$admin_state->id]]
             );
-            sendMessage($chat_id, "<b>مرحله ۵:</b>\n\nآدرس URL تصویر محصول را وارد کنید:\n(برای لغو /cancel)");
+            sendMessage($chat_id, "<b>مرحله ۵:</b>\n\nتعداد موجودی محصول را وارد کنید (فقط عدد):\n(برای لغو /cancel)");
             log_tg("STATE: add_product -> step 5");
             exit;
         } elseif ($step === '5') {
-            $step_data['image_url'] = $text_message;
-            query(
-                "UPDATE",
-                "admin_process_state",
+            if (!is_numeric($text_message)) {
+                sendMessage($chat_id, "❌ لطفاً موجودی را فقط به صورت عدد وارد کنید.", build_back_to_admin_panel_inline());
+                log_tg("STATE_ERR: inventory not numeric");
+                exit;
+            }
+            $step_data['inventory'] = (int)$text_message;
+            query("UPDATE", "admin_process_state",
                 ["step" => 6, "step_data" => json_encode($step_data, JSON_UNESCAPED_UNICODE)],
-                [["key" => "id", "condition" => "=", "value" => $admin_state->id]]
+                [["key"=>"id","condition"=>"=","value"=>$admin_state->id]]
+            );
+            sendMessage($chat_id, "<b>مرحله ۶:</b>\n\nتصویر محصول را ارسال کنید (به صورت Photo):\n(می‌توانید یک URL هم بفرستید)");
+            log_tg("STATE: add_product -> step 6");
+            exit;
+        } elseif ($step === '6') {
+
+            global $BASE_PUBLIC_URL;
+            $image_url = null;
+            $file_id = extractImageFileIdFromMessage($resultTelegram); // $resultTelegram از index.php میاد
+
+            if ($file_id) { // اگر کاربر عکس فرستاد
+                if (empty($BASE_PUBLIC_URL)) {
+                    sendMessage($chat_id, "❌ خطا: آدرس پایه URL در تنظیمات ست نشده. امکان آپلود فایل وجود ندارد.");
+                    exit;
+                }
+                list($ok, $pathOrErr) = downloadTelegramFileById($file_id, 'uploads/products');
+                if (!$ok) {
+                    sendMessage($chat_id, "⚠️ خطا در آپلود تصویر: ".$pathOrErr."\nلطفاً دوباره تلاش کنید.");
+                    exit;
+                }
+                $image_url = rtrim($BASE_PUBLIC_URL, '/') . '/' . $pathOrErr;
+            } elseif (!empty($text_message) && filter_var($text_message, FILTER_VALIDATE_URL)) { // اگر کاربر لینک فرستاد
+                $image_url = $text_message;
+            } else {
+                sendMessage($chat_id, "❌ ورودی نامعتبر است. لطفاً یک تصویر یا یک URL صحیح ارسال کنید.");
+                exit;
+            }
+
+            $step_data['image_url'] = $image_url;
+            // --- پایان بخش جدید ---
+
+            query("UPDATE", "admin_process_state",
+                ["step" => 7, "step_data" => json_encode($step_data, JSON_UNESCAPED_UNICODE)],
+                [["key"=>"id","condition"=>"=","value"=>$admin_state->id]]
             );
 
             $categories = query("SELECT", "categories", false, [
@@ -813,16 +865,17 @@ if ($text_message || !empty($update['message'])) {
             $option = [];
             foreach ($categories as $cat) {
                 $label = (($cat->icon ?? '') ?: '📂') . ' ' . $cat->name;
-                $option[] = [$telegram->buildInlineKeyBoardButton($label, '', 'admin_p_select_cat_' . (int) $cat->id)];
+                $option[] = [$telegram->buildInlineKeyBoardButton($label, '', 'admin_p_select_cat_' . (int)$cat->id)];
             }
             $option[] = [$telegram->buildInlineKeyBoardButton("لغو عملیات ❌", '', 'admin_cancel_process')];
 
             $keyb = $telegram->buildInlineKeyBoard($option);
-            sendMessage($chat_id, "<b>مرحله نهایی (۶):</b>\n\nدسته‌بندی این محصول را انتخاب کنید:", $keyb);
-            log_tg("STATE: add_product -> step 6 (await category)");
+            sendMessage($chat_id, "<b>مرحله نهایی (۷):</b>\n\nدسته‌بندی این محصول را انتخاب کنید:", $keyb);
+            log_tg("STATE: add_product -> step 7 (await category)");
             exit;
         }
     }
+
 
     /* ----------------- ویرایش محصول (text) ----------------- */
     if ($process_name === 'edit_product') {
@@ -835,24 +888,50 @@ if ($text_message || !empty($update['message'])) {
             exit;
         }
 
-        $value = isset($text_message) ? trim($text_message) : null;
+        // این متغیر مقدار نهایی برای ذخیره در دیتابیس خواهد بود
+        $final_value = null;
 
-        if ($field === 'price' || $field === 'inventory') {
-            if (!is_numeric($value)) {
-                sendMessage($chat_id, "❌ لطفاً مقدار عددی معتبر وارد کنید.", build_back_to_admin_panel_inline());
-                log_tg("EDIT_ERR: non-numeric for {$field} pid={$pid}");
+        // --- مدیریت ویژه فیلد تصویر ---
+        if ($field === 'image') {
+            global $BASE_PUBLIC_URL;
+            $file_id = extractImageFileIdFromMessage($resultTelegram);
+
+            if ($file_id) { // اگر عکس فرستاده شد
+                if (empty($BASE_PUBLIC_URL)) {
+                    sendMessage($chat_id, "❌ خطا: آدرس پایه URL در تنظیمات ست نشده.");
+                    exit;
+                }
+                list($ok, $pathOrErr) = downloadTelegramFileById($file_id, 'uploads/products');
+                if (!$ok) {
+                    sendMessage($chat_id, "⚠️ خطا در آپلود تصویر: " . $pathOrErr);
+                    exit;
+                }
+                $final_value = rtrim($BASE_PUBLIC_URL, '/') . '/' . $pathOrErr;
+
+            } elseif (!empty($text_message) && filter_var($text_message, FILTER_VALIDATE_URL)) { // اگر لینک فرستاده شد
+                $final_value = $text_message;
+            } else {
+                sendMessage($chat_id, "❌ لطفاً یک تصویر معتبر یا یک URL صحیح ارسال کنید.");
                 exit;
             }
-            $value = (int) $value;
+        } else { // برای سایر فیلدها مثل قبل عمل کن
+            $final_value = isset($text_message) ? trim($text_message) : null;
+            if ($field === 'price' || $field === 'inventory') {
+                if (!is_numeric($final_value)) {
+                    sendMessage($chat_id, "❌ لطفاً مقدار عددی معتبر وارد کنید.", build_back_to_admin_panel_inline());
+                    exit;
+                }
+                $final_value = (int) $final_value;
+            }
         }
 
         $map = [
-            'title' => 'title',
+            'title'       => 'title',
             'description' => 'description',
-            'price' => 'price',
-            'author' => 'author',
-            'image' => 'image_url',
-            'inventory' => 'inventory',
+            'price'       => 'price',
+            'author'      => 'author',
+            'image'       => 'image_url',
+            'inventory'   => 'inventory',
         ];
 
         if (!isset($map[$field])) {
@@ -861,12 +940,15 @@ if ($text_message || !empty($update['message'])) {
             exit;
         }
 
-        query("UPDATE", "products", [$map[$field] => $value], [["key" => "id", "condition" => "=", "value" => $pid]]);
+        // *** اصلاح اصلی اینجاست: استفاده از final_value$ به جای value$ ***
+        query("UPDATE", "products", [$map[$field] => $final_value], [["key" => "id", "condition" => "=", "value" => $pid]]);
 
         $conn->prepare("DELETE FROM admin_process_state WHERE id = :id")->execute([':id' => $admin_state->id]);
         sendMessage($chat_id, "✅ مقدار <b>{$field}</b> محصول #{$pid} بروزرسانی شد.", build_back_to_admin_panel_inline());
         showProductInfo($chat_id, $pid, 'view', $mesasge_id);
-        log_tg("EDIT_DONE: field={$field} pid={$pid} value=" . mb_substr((string) $value, 0, 60));
+        
+        // *** اصلاح دوم: استفاده از final_value$ برای لاگ ***
+        log_tg("EDIT_DONE: field={$field} pid={$pid} value=" . mb_substr((string) $final_value, 0, 60));
         exit;
     }
 

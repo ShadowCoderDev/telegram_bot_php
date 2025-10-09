@@ -12,6 +12,8 @@ require_once 'admin_functions.php';
 /* =================== تنظیمات پایه =================== */
 $BOT_TOKEN = "8267056539:AAHUjlj1dK5yVJl0U0UiRq13_U0-XxIRAvg"; // ❗️ توکن ربات
 $ADMIN_CHAT_ID = "2020715168"; // ❗️ آیدی عددی ادمین
+$BASE_PUBLIC_URL = "https://098a6b7a929f.ngrok-free.app";
+
 
 $telegram = new Telegram($BOT_TOKEN);
 

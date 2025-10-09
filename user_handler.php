@@ -86,6 +86,31 @@ if (isset($resultTelegram['callback_query'])) {
         $product_id = intval($parts[3] ?? 0);
         $qty = max(1, min(99, intval($parts[4] ?? 1)));
 
+
+
+        // --- شروع بخش جدید: چک کردن موجودی ---
+        $product = query("SELECT", "products", false, [["key"=>"id","condition"=>"=","value"=>$product_id]]);
+        if (!$product || $product->inventory < $qty) {
+            $err_msg = "❌ متاسفانه موجودی این محصول کافی نیست.";
+            if ($product) {
+                $err_msg .= "\nحداکثر موجودی قابل سفارش: " . $product->inventory . " عدد";
+            }
+
+            // ساخت دکمه بازگشت
+            global $telegram;
+            $back_callback = $product ? 'product_' . $product->id : 'buy_product';
+            $keyb = $telegram->buildInlineKeyBoard([
+                [ $telegram->buildInlineKeyBoardButton("بازگشت 🔙", '', $back_callback) ]
+            ]);
+            
+            // ارسال پیام خطا همراه با دکمه
+            sendMessage($chat_id, $err_msg, $keyb, $mesasge_id);
+            exit;
+        }
+
+
+
+
         $user_detail = query("SELECT", "users", false, [["key" => "chat_id", "condition" => "=", "value" => $chat_id]]);
         if (!$user_detail) {
             sendMessage($chat_id, "❌ خطا: کاربر یافت نشد.", false, $mesasge_id);
@@ -106,6 +131,16 @@ if (isset($resultTelegram['callback_query'])) {
             ["key" => "order_id", "condition" => "=", "value" => $active_order->id],
             ["key" => "product_id", "condition" => "=", "value" => $product_id]
         ]);
+
+        $quantity_in_cart = $existing ? intval($existing->quantity) : 0;
+        if ($product->inventory < ($quantity_in_cart + $qty)) {
+            $err_msg = "❌ شما قبلاً {$quantity_in_cart} عدد از این محصول را در سبد دارید.\n";
+            $err_msg .= "موجودی انبار (" . $product->inventory . " عدد) برای اضافه کردن {$qty} عدد دیگر کافی نیست.";
+            sendMessage($chat_id, $err_msg, false, $mesasge_id);
+            exit;
+        }
+
+
         if ($existing) {
             $new_q = max(1, min(999, intval($existing->quantity) + $qty));
             query("UPDATE", "orders_item", ["quantity" => $new_q], [["key" => "id", "condition" => "=", "value" => $existing->id]]);
@@ -144,21 +179,64 @@ if (isset($resultTelegram['callback_query'])) {
 
     // شروع checkout
     if ($callback_data == 'checkout') {
+        global $conn;
         $user_detail = query("SELECT", "users", false, [["key" => "chat_id", "condition" => "=", "value" => $chat_id]]);
+        if (!$user_detail) { exit; } // این خط برای جلوگیری از خطا مهم است
+    
         $active_order = query("SELECT", "orders", false, [
             ["key" => "status", "condition" => "=", "value" => "pending"],
             ["key" => "user_id", "condition" => "=", "value" => $user_detail->id]
         ]);
+        
         if ($active_order) {
+            // --- شروع بخش جدید: چک کردن موجودی کل سبد خرید ---
+            $sql = "SELECT oi.quantity, p.title, p.inventory FROM orders_item oi JOIN products p ON p.id = oi.product_id WHERE oi.order_id = :oid";
+            $stmt = $conn->prepare($sql);
+            $stmt->execute([':oid' => $active_order->id]);
+            $cart_items = $stmt->fetchAll(PDO::FETCH_OBJ);
+    
+            // اگر سبد خرید خالی باشد (ممکن است آیتم‌ها حذف شده باشند)
+            if (!$cart_items) {
+                sendMessage($chat_id, "🛒 سبد خرید شما خالی است!", false, $mesasge_id);
+                exit;
+            }
+    
+            $out_of_stock = [];
+            foreach ($cart_items as $item) {
+                if ($item->inventory < $item->quantity) {
+                    $out_of_stock[] = "محصول '<b>{$item->title}</b>' (موجودی: {$item->inventory} عدد)";
+                }
+            }
+    
+            if (!empty($out_of_stock)) {
+                $error_msg = "❌ متاسفانه برخی از محصولات سبد شما با کمبود موجودی مواجه شده‌اند:\n\n" . implode("\n", $out_of_stock);
+                $error_msg .= "\n\nلطفاً سبد خرید خود را ویرایش کرده و دوباره تلاش کنید.";
+                
+                global $telegram;
+                $keyb = $telegram->buildInlineKeyBoard([
+                    [ $telegram->buildInlineKeyBoardButton("مشاهده سبد خرید 🛒", '', 'view_cart') ]
+                ]);
+                sendMessage($chat_id, $error_msg, $keyb, $mesasge_id);
+                exit;
+            }
+            // --- پایان بخش جدید ---
+    
+            // اگر همه چیز درست بود، فرآیند را شروع کن
             query("CREATE", "user_checkout_state", ["user_id" => $user_detail->id, "order_id" => $active_order->id, "step" => 1]);
+            $txt = "مرحله 1️⃣\n\n";
+            $txt .= "لطفاً نام و نام خانوادگی خود را وارد کنید:\n";
+            $txt .= "(به صورت: نام نام‌خانوادگی)\n\n";
+            $txt .= "مثال: علی محمدی";
+            sendMessage($chat_id, $txt, false, $mesasge_id);
+            
+        } else {
+            // اگر سفارش فعالی وجود نداشت
+            sendMessage($chat_id, "🛒 سبد خرید شما خالی است!", false, $mesasge_id);
         }
-        $txt = "مرحله 1️⃣\n\n";
-        $txt .= "لطفاً نام و نام خانوادگی خود را وارد کنید:\n";
-        $txt .= "(به صورت: نام نام‌خانوادگی)\n\n";
-        $txt .= "مثال: علی محمدی";
-        sendMessage($chat_id, $txt, false, $mesasge_id);
-        exit;
+    
+        exit; // در پایان همیشه exit() قرار داشته باشد تا اجرای کد ادامه پیدا نکند
     }
+
 
     // لیست دسته‌ها
     if ($callback_data == 'buy_product') {
