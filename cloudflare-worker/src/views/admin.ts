@@ -2,7 +2,8 @@ import type { Category, CategoryWithCount, CustomerSummary, Faq, Order, Product 
 import type { SettingKey } from '../db/repositories';
 import type { FullOrder } from '../services/OrderService';
 import { ALLOWED_ACTIONS, STATUS_FA, type AdminOrderAction } from '../services/orderStatus';
-import { backRow, button, inline, replyKeyboard } from '../telegram/keyboard';
+import { GRACE_DAYS, type Access } from '../services/subscription';
+import { backRow, button, inline, replyKeyboard, urlButton } from '../telegram/keyboard';
 import type { ButtonStyle, InlineKeyboardButton, View } from '../telegram/types';
 import { escapeHtml as e, money, truncate } from '../utils/format';
 import { formatPersianDate } from '../utils/persian';
@@ -35,13 +36,43 @@ const pager = (page: number, pages: number, toData: (page: number) => string): I
         ],
       ];
 
-export const adminRoot = (awaitingReview = 0): View => ({
+/** Subscription state of a seller's shop, shown on the admin panel (absent for the owner's own shop). */
+export interface SubscriptionInfo {
+  access: Access;
+  trial: boolean;
+  paidUntil: number;
+  daysLeft: number;
+  /** Link to the platform bot's renewal flow for this shop. */
+  renewUrl?: string;
+}
+
+const subscriptionLine = (s: SubscriptionInfo): string => {
+  const until = formatPersianDate(s.paidUntil).split(' - ')[0];
+  switch (s.access) {
+    case 'ok':
+      return s.trial
+        ? `🎁 دوره‌ی آزمایشی: <b>${fa(s.daysLeft)}</b> روز مانده`
+        : `${s.daysLeft <= 3 ? '⚠️' : '💳'} اشتراک: <b>${fa(s.daysLeft)}</b> روز مانده ${hint(`(تا ${until})`)}`;
+    case 'grace':
+      return `⚠️ <b>اشتراک تمام شده.</b> فروشگاه فقط تا <b>${fa(GRACE_DAYS + s.daysLeft)}</b> روز دیگر برای مشتری‌ها باز است؛ لطفاً تمدید کنید.`;
+    case 'expired':
+      return '🔒 <b>اشتراک تمام شده و فروشگاه برای مشتری‌ها بسته است.</b> با تمدید، فوراً باز می‌شود.';
+    case 'suspended':
+      return '⛔ <b>این فروشگاه توسط پلتفرم متوقف شده است.</b> با پشتیبانی پلتفرم تماس بگیرید.';
+  }
+};
+
+export const adminRoot = (awaitingReview = 0, subscription?: SubscriptionInfo): View => ({
   text: sections(
     heading('🔐', 'پنل مدیریت'),
+    subscription && subscriptionLine(subscription),
     awaitingReview ? `🟡 <b>${fa(awaitingReview)}</b> سفارش منتظر تایید شماست.` : '',
     '👇 یکی از بخش‌ها را انتخاب کنید:',
   ),
   keyboard: inline(
+    ...(subscription?.renewUrl && subscription.access !== 'suspended'
+      ? [[urlButton('💳 تمدید اشتراک', subscription.renewUrl, subscription.access === 'ok' && subscription.daysLeft > 3 ? undefined : 'success')]]
+      : []),
     [
       button(awaitingReview ? `🧾 سفارشات (🟡 ${fa(awaitingReview)})` : '🧾 سفارشات', A.orders, 'primary'),
       button('👥 مشتریان', A.customers, 'primary'),

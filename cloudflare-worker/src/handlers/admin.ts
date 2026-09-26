@@ -11,7 +11,8 @@ import { parseAmount, tehranDayAndMonthStart } from '../utils/persian';
 import * as v from '../views/admin';
 import { CB } from '../views/callbacks';
 import { fa, heading, hint, progress, quote, sections } from '../views/common';
-import { LIMITS, charCount } from '../limits';
+import { LIMITS, charCount, planLimits } from '../limits';
+import { daysLeft, shopAccess } from '../services/subscription';
 
 const A = CB.admin;
 
@@ -42,7 +43,8 @@ const FAQ_STEP = (n: number, body: string) => v.formStep('افزودن سوال 
  */
 export function registerAdminRoutes(router: Router, d: Deps): Router {
   const showAdmins = async (ctx: BotContext) => ctx.render(v.adminsPage(d.envAdminIds, await d.settings.claimedAdmins(), ctx.chatId));
-  const showRoot = async (ctx: BotContext) => ctx.render(v.adminRoot(await d.orders.countAllAwaitingReview()));
+  const rootView = async () => v.adminRoot(await d.orders.countAllAwaitingReview(), await subscriptionInfo(d));
+  const showRoot = async (ctx: BotContext) => ctx.render(await rootView());
   const showFaqs = async (ctx: BotContext) => ctx.render(v.faqsManage(await d.faqs.list(false)));
   const showFaq = async (ctx: BotContext, id: number) => {
     const faq = await d.faqs.find(id);
@@ -89,6 +91,15 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
     await d.sessions.set(ctx.chatId, FLOW.dialog, 'await', { buyerChatId, orderId });
     await ctx.reply(v.dialogOpened(buyerChatId, name));
   };
+  /** Replies and returns true when the shop's plan doesn't allow one more of `kind`. */
+  const atLimit = async (ctx: BotContext, kind: 'products' | 'categories' | 'faqs'): Promise<boolean> => {
+    const max = planLimits(d.shop.plan)[kind];
+    const count = await (kind === 'products' ? d.products.count() : kind === 'categories' ? d.categories.count() : d.faqs.count());
+    if (count < max) return false;
+    const label = { products: 'محصول', categories: 'دسته‌بندی', faqs: 'سوال متداول' }[kind];
+    await ctx.reply(v.done(sections(heading('⚠️', 'به سقف رسیدید'), `هر فروشگاه حداکثر ${fa(max)} ${label} می‌تواند داشته باشد.`, hint('موارد قدیمی یا غیرفعال را حذف کنید.'))));
+    return true;
+  };
   const start = async (ctx: BotContext, flow: string, step: string, data: Data, message: string | View) => {
     await d.sessions.set(ctx.chatId, flow, step, data);
     await ctx.reply(typeof message === 'string' ? v.prompt(message) : message);
@@ -97,7 +108,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
   return (
     router
       .text(['/start', '/admin', v.ADMIN_HOME], async (ctx) => {
-        await ctx.reply(v.adminRoot(await d.orders.countAllAwaitingReview()));
+        await ctx.reply(await rootView());
         await ctx.reply(v.adminReplyKeyboard());
       })
       .text('/cancel', async (ctx) => {
@@ -136,7 +147,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
 
       /* ----- FAQs ----- */
       .callback(A.faqs, showFaqs)
-      .callback(A.addFaq, (ctx) => start(ctx, FLOW.faq, 'question', {}, FAQ_STEP(1, '❓ متن کامل <b>سوال</b> را بفرستید:')))
+      .callback(A.addFaq, async (ctx) => (await atLimit(ctx, 'faqs')) || start(ctx, FLOW.faq, 'question', {}, FAQ_STEP(1, '❓ متن کامل <b>سوال</b> را بفرستید:')))
       .callback(/^a:faq:(\d+)$/, (ctx, [id]) => showFaq(ctx, Number(id)))
       .callback(/^a:faq:edit:(\d+):(question|answer)$/, async (ctx, [id, field]) => {
         const faq = await d.faqs.find(Number(id));
@@ -165,7 +176,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
 
       /* ----- categories ----- */
       .callback(A.categories, showCategories)
-      .callback(A.addCategory, (ctx) => start(ctx, FLOW.category, 'name', {}, CATEGORY_STEP(1, '📂 <b>نام</b> دسته‌بندی را بفرستید:')))
+      .callback(A.addCategory, async (ctx) => (await atLimit(ctx, 'categories')) || start(ctx, FLOW.category, 'name', {}, CATEGORY_STEP(1, '📂 <b>نام</b> دسته‌بندی را بفرستید:')))
       .callback(/^a:cat:(\d+)$/, (ctx, [id]) => showCategory(ctx, Number(id)))
       .callback(/^a:cat:edit:(\d+):(name|icon)$/, async (ctx, [id, field]) => {
         const cat = await d.categories.find(Number(id));
@@ -195,7 +206,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
       /* ----- products ----- */
       .callback(A.products, (ctx) => showProducts(ctx, 0))
       .callback(/^a:prods:(\d+)$/, (ctx, [page]) => showProducts(ctx, Number(page)))
-      .callback(A.addProduct, (ctx) => start(ctx, FLOW.product, 'title', {}, PRODUCT_STEP(1, '📘 <b>نام</b> محصول را بفرستید:')))
+      .callback(A.addProduct, async (ctx) => (await atLimit(ctx, 'products')) || start(ctx, FLOW.product, 'title', {}, PRODUCT_STEP(1, '📘 <b>نام</b> محصول را بفرستید:')))
       .callback(/^a:prod:(\d+)$/, (ctx, [id]) => showProduct(ctx, Number(id)))
       .callback(/^a:prod:edit:(\d+)$/, (ctx, [id]) => ctx.render(v.productEditMenu(Number(id))))
       .callback(/^a:prod:field:(\d+):(\w+)$/, async (ctx, [id, field]) => {
@@ -214,7 +225,8 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
         await ctx.render(v.categoryPicker(cats, `🔁 دسته‌ی جدید را برای محصول #${pid} انتخاب کنید:`, (c) => A.setCategory(pid, c.id), backRow(A.editProduct(pid))));
       })
       .callback(/^a:prod:setcat:(\d+):(\d+)$/, async (ctx, [id, catId]) => {
-        await d.products.update(Number(id), 'category_id', Number(catId));
+        // Only a category of this shop is accepted, even from a forged button.
+        if (!(await d.products.setCategory(Number(id), Number(catId)))) await ctx.reply({ text: '❌ دسته‌بندی نامعتبر است.' });
         await showProduct(ctx, Number(id));
       })
       .callback(/^a:prod:newcat:(\d+)$/, async (ctx, [catId]) => {
@@ -222,6 +234,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
         if (s?.flow !== FLOW.product || s.step !== 'category') return ctx.render(v.done('❌ فرایند افزودن محصول یافت نشد. دوباره شروع کنید.'));
         const draft = { ...s.data, category_id: Number(catId) } as ProductDraft;
         const id = await d.products.create(draft);
+        if (id === null) return ctx.render(v.done('❌ دسته‌بندی نامعتبر است. دوباره شروع کنید.'));
         await d.sessions.clear(ctx.chatId);
         await ctx.render(v.done(sections(heading('✅', 'محصول اضافه شد'), quote(`📘 <b>${e(draft.title)}</b>  ${hint(`#${id}`)}`))));
       })
@@ -502,4 +515,18 @@ async function addProductStep(ctx: BotContext, s: Session<Data>, d: Deps, text: 
       return ctx.reply({ text: '👆 لطفاً دسته‌بندی را از دکمه‌های بالا انتخاب کنید.' });
   }
   await ctx.reply(v.prompt('⚠️ لطفاً یک متن ارسال کنید.'));
+}
+
+/** The shop's subscription as shown on the admin panel; none for the platform owner's own shop. */
+async function subscriptionInfo(d: Deps): Promise<v.SubscriptionInfo | undefined> {
+  if (d.shop.plan === 'owner') return undefined;
+  const now = Math.floor(Date.now() / 1000);
+  const platformBot = await d.platformSettings.raw('bot_username');
+  return {
+    access: shopAccess(d.shop, now),
+    trial: d.shop.plan === 'trial',
+    paidUntil: d.shop.paid_until,
+    daysLeft: daysLeft(d.shop.paid_until, now),
+    renewUrl: platformBot ? `https://t.me/${platformBot}?start=renew_${d.shop.id}` : undefined,
+  };
 }

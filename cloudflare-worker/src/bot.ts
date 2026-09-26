@@ -1,11 +1,13 @@
 import type { Deps } from './deps';
 import { registerAdminRoutes } from './handlers/admin';
 import { registerUserRoutes } from './handlers/user';
+import { shopAccess } from './services/subscription';
 import { BotContext } from './telegram/BotContext';
 import { Router } from './telegram/Router';
 import type { Update } from './telegram/types';
 
 const FLOOD_WINDOW_SECONDS = 10;
+export const CLOSED_TEXT = '🔒 این فروشگاه موقتاً در دسترس نیست.\nلطفاً بعداً دوباره سر بزنید.';
 export const BLOCKED_TEXT = '⛔ دسترسی شما به این ربات محدود شده است.\nبرای پیگیری با پشتیبانی تماس بگیرید.';
 
 /** Builds the routers once per request from the wired dependencies. */
@@ -24,6 +26,14 @@ export function createBot(d: Deps) {
     if (update.update_id % 200 === 0) await d.updateLog.prune();
 
     const cb = update.callback_query;
+    // Subscription gate: a shop whose subscription ran out (after the grace days) or that the
+    // platform suspended is closed to customers; its admins still get in, to renew and finish orders.
+    const access = shopAccess(d.shop, Math.floor(Date.now() / 1000));
+    if (!ctx.isAdmin && (access === 'expired' || access === 'suspended')) {
+      if (cb) await d.tg.answerCallbackQuery(cb.id, CLOSED_TEXT, true).catch(() => {});
+      else await d.tg.sendMessage(ctx.chatId, CLOSED_TEXT);
+      return;
+    }
     if (!ctx.isAdmin) {
       // Flood guard: a chat sending faster than a human can is ignored for a few seconds.
       if ((await d.updateLog.recentCount(ctx.chatId, FLOOD_WINDOW_SECONDS)) > d.floodLimit) {

@@ -1,6 +1,7 @@
 import m0001 from '../../migrations/0001_init.sql';
 import m0002 from '../../migrations/0002_product_image_file_id.sql';
 import m0003 from '../../migrations/0003_customers_and_abuse_guards.sql';
+import m0004 from '../../migrations/0004_multi_tenant.sql';
 
 /**
  * The Worker brings its own database up to date on first use, so a plain `wrangler deploy`
@@ -12,6 +13,7 @@ const MIGRATIONS: { name: string; sql: string }[] = [
   { name: '0001_init.sql', sql: m0001 },
   { name: '0002_product_image_file_id.sql', sql: m0002 },
   { name: '0003_customers_and_abuse_guards.sql', sql: m0003 },
+  { name: '0004_multi_tenant.sql', sql: m0004 },
 ];
 
 /** Splits a migration file into statements (our files have no semicolons inside strings or triggers). */
@@ -22,14 +24,14 @@ export const splitSql = (sql: string): string[] =>
     .filter((stmt) => stmt.replace(/^\s*--.*$/gm, '').trim());
 
 /** Applies every pending migration. Exported for tests; the Worker uses ensureSchema(). */
-export async function migrate(db: D1Database): Promise<void> {
+export async function migrate(db: D1Database, upTo = MIGRATIONS.length): Promise<void> {
   await db
     .prepare(
       'CREATE TABLE IF NOT EXISTS d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)',
     )
     .run();
   const applied = new Set((await db.prepare('SELECT name FROM d1_migrations').all<{ name: string }>()).results.map((r) => r.name));
-  for (const m of MIGRATIONS) {
+  for (const m of MIGRATIONS.slice(0, upTo)) {
     if (applied.has(m.name)) continue;
     const statements = splitSql(m.sql).map((sql) => db.prepare(sql));
     try {

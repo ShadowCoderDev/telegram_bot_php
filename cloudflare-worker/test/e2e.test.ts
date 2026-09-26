@@ -100,7 +100,7 @@ beforeAll(async () => {
   rmSync(PERSIST, { recursive: true, force: true });
 
   worker = spawn('npx', [
-    'wrangler', 'dev', '--port', String(WORKER_PORT), '--ip', '127.0.0.1', '--persist-to', PERSIST,
+    'wrangler', 'dev', '--port', String(WORKER_PORT), '--ip', '127.0.0.1', '--inspector-port', '9331', '--persist-to', PERSIST,
     '--var', `BOT_TOKEN:${TOKEN}`, '--var', `WEBHOOK_SECRET:${SECRET}`,
     '--var', `ADMIN_CHAT_IDS:${ADMIN}`, '--var', `TELEGRAM_API_BASE:http://127.0.0.1:${tgPort}`,
     '--var', 'FLOOD_LIMIT:100',
@@ -398,7 +398,7 @@ describe('shop bot end-to-end', () => {
   it('serves a status page that registers the webhook', async () => {
     const res = await fetch(`http://127.0.0.1:${WORKER_PORT}/`);
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain('ربات فعال است');
+    expect(await res.text()).toContain('✅ فروشگاه اصلی');
     const hook = calls.filter((c) => c.method === 'setWebhook').at(-1)!;
     expect(hook.params).toMatchObject({ url: `http://127.0.0.1:${WORKER_PORT}/webhook`, secret_token: SECRET });
   });
