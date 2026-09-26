@@ -204,7 +204,10 @@ async function closeDialogFor(adminChatId: number, d: Deps) {
 
 /** Accepts either an uploaded image (stored in R2) or an http(s) URL. */
 async function readImageUrl(ctx: BotContext, d: Deps): Promise<string | null> {
-  if (ctx.imageFileId) return d.files.publicUrl(await d.files.saveTelegramFile(ctx.imageFileId, 'products'));
+  if (ctx.imageFileId) {
+    // Uploads need R2 for a public URL; without it only links are accepted.
+    return d.files ? d.files.publicUrl(await d.files.saveTelegramFile(ctx.imageFileId, 'products')) : null;
+  }
   try {
     const url = new URL(ctx.text ?? '');
     return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null;

@@ -36,7 +36,7 @@ export function createDeps(env: Env, publicOrigin: string) {
     dialogs: new DialogRepository(env.DB),
     cart: new CartService(orders, products),
     orderService: new OrderService(orders),
-    files: new FileStore(env.FILES, tg, publicOrigin),
+    files: env.FILES ? new FileStore(env.FILES, tg, publicOrigin) : null,
     adminIds: parseAdminIds(env.ADMIN_CHAT_IDS),
     /** Finds the shopper's row, creating it on first contact. */
     async user(chatId: number, name: string): Promise<UserRow> {

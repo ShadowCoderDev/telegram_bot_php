@@ -28,7 +28,7 @@ export default {
       return new Response('ok');
     }
 
-    if (request.method === 'GET' && url.pathname.startsWith('/files/')) {
+    if (request.method === 'GET' && url.pathname.startsWith('/files/') && deps.files) {
       return deps.files.serve(decodeURIComponent(url.pathname.slice('/files/'.length)));
     }
 

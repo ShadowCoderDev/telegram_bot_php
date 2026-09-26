@@ -5,19 +5,20 @@
   "compatibility_date": "2026-09-01",
   "observability": { "enabled": true },
 
-  // Non-secret configuration. Secrets (BOT_TOKEN, WEBHOOK_SECRET) are set with
-  // `wrangler secret put` (production) or in .dev.vars (local).
+  // Deploy with `npm run deploy` (scripts/deploy.mjs). It creates the D1 database and R2 bucket
+  // when missing, fills in the ids, uploads the secrets (BOT_TOKEN, WEBHOOK_SECRET) and sets the
+  // Telegram webhook, so nothing in this file needs to be edited by hand. Locally use .dev.vars.
   "vars": {
     "ADMIN_CHAT_IDS": "2020715168",
     "TELEGRAM_API_BASE": "https://api.telegram.org"
   },
 
-  // Replaces MySQL. Create with: wrangler d1 create shop  → paste the id here.
+  // Replaces MySQL. database_id is looked up by name at deploy time; the placeholder is only for local dev.
   "d1_databases": [
     { "binding": "DB", "database_name": "shop", "database_id": "REPLACE_WITH_D1_ID", "migrations_dir": "migrations" }
   ],
 
-  // Replaces the local uploads/ folder. Create with: wrangler r2 bucket create shop-files
+  // Replaces the local uploads/ folder. Optional: dropped automatically if R2 isn't enabled on the account.
   "r2_buckets": [
     { "binding": "FILES", "bucket_name": "shop-files" }
   ]
