@@ -1,4 +1,4 @@
-import type { Category, CustomerSummary, Dialog, Faq, Order, OrderDetails, OrderLine, OrderStatus, Product, Session, Toggle, UserRow } from './models';
+import type { Category, CategoryWithCount, CustomerSummary, Dialog, Faq, Order, OrderDetails, OrderLine, OrderStatus, Product, Session, Toggle, UserRow } from './models';
 
 /*
  * One small class per aggregate. Every query is a prepared statement with bound parameters –
@@ -99,6 +99,24 @@ export class CategoryRepository extends Repository {
   find(id: number) {
     return this.first<Category>('SELECT * FROM categories WHERE id = ?', id);
   }
+  /** All categories with how many products each holds, for the admin. */
+  listWithCounts() {
+    return this.all<CategoryWithCount>(
+      'SELECT c.*, (SELECT count(*) FROM products p WHERE p.category_id = c.id) AS product_count FROM categories c ORDER BY c.id',
+    );
+  }
+  findWithCount(id: number) {
+    return this.first<CategoryWithCount>(
+      'SELECT c.*, (SELECT count(*) FROM products p WHERE p.category_id = c.id) AS product_count FROM categories c WHERE c.id = ?',
+      id,
+    );
+  }
+  rename(id: number, name: string) {
+    return this.run('UPDATE categories SET name = ? WHERE id = ?', name, id);
+  }
+  setIcon(id: number, icon: string) {
+    return this.run('UPDATE categories SET icon = ? WHERE id = ?', icon, id);
+  }
   async create(name: string, icon: string): Promise<number> {
     const r = await this.run('INSERT INTO categories (name, icon) VALUES (?, ?)', name, icon);
     return r.meta.last_row_id;
@@ -106,11 +124,10 @@ export class CategoryRepository extends Repository {
   setStatus(id: number, status: Toggle) {
     return this.run('UPDATE categories SET status = ? WHERE id = ?', status, id);
   }
-  async hasProducts(id: number): Promise<boolean> {
-    return (await this.first('SELECT 1 FROM products WHERE category_id = ? LIMIT 1', id)) !== null;
-  }
-  delete(id: number) {
-    return this.run('DELETE FROM categories WHERE id = ?', id);
+  /** Deletes only an empty category; returns false when it still has products. */
+  async deleteIfEmpty(id: number): Promise<boolean> {
+    const r = await this.run('DELETE FROM categories WHERE id = ? AND NOT EXISTS (SELECT 1 FROM products WHERE category_id = ?)', id, id);
+    return r.meta.changes > 0;
   }
 }
 
@@ -188,6 +205,10 @@ export class OrderRepository extends Repository {
         ? await this.first<{ n: number }>(`SELECT count(*) AS n FROM orders WHERE ${PLACED}`)
         : await this.first<{ n: number }>(`SELECT count(*) AS n FROM orders WHERE ${PLACED} AND user_id = ?`, userId);
     return r!.n;
+  }
+  /** All paid orders waiting for an admin – shown as a badge in the admin panel. */
+  async countAllAwaitingReview(): Promise<number> {
+    return (await this.first<{ n: number }>("SELECT count(*) AS n FROM orders WHERE status = 'payed'"))!.n;
   }
   /** Paid orders still waiting for an admin – capped per customer to stop receipt spam. */
   async countAwaitingReview(userId: number): Promise<number> {
@@ -380,22 +401,63 @@ export class FaqRepository extends Repository {
   setStatus(id: number, status: Toggle) {
     return this.run('UPDATE faqs SET status = ? WHERE id = ?', status, id);
   }
+  update(id: number, field: 'question' | 'answer', value: string) {
+    return this.run(field === 'question' ? 'UPDATE faqs SET question = ? WHERE id = ?' : 'UPDATE faqs SET answer = ? WHERE id = ?', value, id);
+  }
+  delete(id: number) {
+    return this.run('DELETE FROM faqs WHERE id = ?', id);
+  }
 }
 
-export const SETTING_KEYS = ['help_text', 'support', 'bank_info'] as const;
-export type SettingKey = (typeof SETTING_KEYS)[number];
+/** Admin-editable settings and their defaults (a new seller's bot starts with these). */
+export const SETTING_DEFAULTS = {
+  shop_name: 'فروشگاه ما',
+  welcome_text: 'به فروشگاه ما خوش آمدید ❤️',
+  track_prefix: 'ORD-',
+  bank_info: 'شماره کارت هنوز تنظیم نشده است.',
+  support: 'پشتیبانی تنظیم نشده',
+  help_text: 'راهنما هنوز تنظیم نشده است.',
+} as const;
+export type SettingKey = keyof typeof SETTING_DEFAULTS;
+export const SETTING_KEYS = Object.keys(SETTING_DEFAULTS) as SettingKey[];
+
+/** Internal values the bot keeps for itself (not shown in the settings menu). */
+type InternalKey = 'admin_chat_ids' | 'webhook_marker';
 
 export class SettingsRepository extends Repository {
-  async get(key: SettingKey, fallback: string): Promise<string> {
-    const r = await this.first<{ setting_value: string }>('SELECT setting_value FROM settings WHERE setting_key = ?', key);
-    return r?.setting_value ?? fallback;
+  async get(key: SettingKey): Promise<string> {
+    return (await this.raw(key)) ?? SETTING_DEFAULTS[key];
   }
-  set(key: SettingKey, value: string) {
+  async getMany<K extends SettingKey>(keys: readonly K[]): Promise<Record<K, string>> {
+    const rows = await this.all<{ setting_key: K; setting_value: string }>(
+      `SELECT setting_key, setting_value FROM settings WHERE setting_key IN (${keys.map(() => '?').join(',')})`,
+      ...keys,
+    );
+    const found = new Map(rows.map((r) => [r.setting_key, r.setting_value]));
+    return Object.fromEntries(keys.map((k) => [k, found.get(k) ?? SETTING_DEFAULTS[k]])) as Record<K, string>;
+  }
+  set(key: SettingKey | InternalKey, value: string) {
     return this.run(
       'INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value',
       key,
       value,
     );
+  }
+  async raw(key: SettingKey | InternalKey): Promise<string | null> {
+    const r = await this.first<{ setting_value: string }>('SELECT setting_value FROM settings WHERE setting_key = ?', key);
+    return r?.setting_value ?? null;
+  }
+
+  /** Admins who joined with /claim (in addition to ADMIN_CHAT_IDS from the Worker config). */
+  async claimedAdmins(): Promise<number[]> {
+    return (await this.raw('admin_chat_ids') ?? '').split(',').map(Number).filter((n) => Number.isSafeInteger(n) && n !== 0);
+  }
+  async addAdmin(chatId: number) {
+    const ids = new Set(await this.claimedAdmins()).add(chatId);
+    await this.set('admin_chat_ids', [...ids].join(','));
+  }
+  async removeAdmin(chatId: number) {
+    await this.set('admin_chat_ids', (await this.claimedAdmins()).filter((id) => id !== chatId).join(','));
   }
 }
 

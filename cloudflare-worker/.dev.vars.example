@@ -1,2 +1,2 @@
 BOT_TOKEN=123456:replace-me
-WEBHOOK_SECRET=any-long-random-string
+WEBHOOK_SECRET=at-least-16-random-characters

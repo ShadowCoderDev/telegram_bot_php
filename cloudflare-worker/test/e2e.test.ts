@@ -13,7 +13,8 @@ const BUYER = 2002;
 const BUYER2 = 3003;
 const FLOODER = 4004;
 const GROUP = -5005;
-const SECRET = 'e2e-secret';
+const CLAIMER = 6006;
+const SECRET = 'e2e-secret-0123456789';
 const TOKEN = 'TEST:TOKEN';
 const PERSIST = '.wrangler/e2e';
 const WORKER_PORT = 8799;
@@ -95,8 +96,8 @@ beforeAll(async () => {
   await new Promise<void>((r) => telegram.listen(0, '127.0.0.1', r));
   const tgPort = (telegram.address() as AddressInfo).port;
 
+  // No migrations are applied here: the Worker creates its own tables on the first request.
   rmSync(PERSIST, { recursive: true, force: true });
-  execFileSync('npx', ['wrangler', 'd1', 'migrations', 'apply', 'shop', '--local', '--persist-to', PERSIST], { stdio: 'ignore' });
 
   worker = spawn('npx', [
     'wrangler', 'dev', '--port', String(WORKER_PORT), '--ip', '127.0.0.1', '--persist-to', PERSIST,
@@ -179,7 +180,7 @@ describe('shop bot end-to-end', () => {
     // The admin raises the price after the customer was shown the amount: the shown amount holds.
     await setPrice(1, '150000');
     await photo(BUYER);
-    expect(lastText(BUYER)).toContain('IELTS-');
+    expect(lastText(BUYER)).toContain('ORD-'); // default prefix until the seller sets one
     expect(lastText(BUYER)).toContain('240,000');
 
     const alert = calls.filter((c) => c.params.chat_id === ADMIN && c.method === 'sendPhoto').at(-1)!;
@@ -392,5 +393,96 @@ describe('shop bot end-to-end', () => {
     const answered = sent(FLOODER).length;
     expect(answered).toBeGreaterThanOrEqual(100);
     expect(answered).toBeLessThan(130);
+  });
+
+  it('serves a status page that registers the webhook', async () => {
+    const res = await fetch(`http://127.0.0.1:${WORKER_PORT}/`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('ربات فعال است');
+    const hook = calls.filter((c) => c.method === 'setWebhook').at(-1)!;
+    expect(hook.params).toMatchObject({ url: `http://127.0.0.1:${WORKER_PORT}/webhook`, secret_token: SECRET });
+  });
+
+  it('lets a seller become admin with /claim and the admin remove them', async () => {
+    await text(CLAIMER, '/claim wrong-secret-123456');
+    expect(lastText(CLAIMER)).toContain('اشتباه');
+    await text(CLAIMER, `/claim ${SECRET}`);
+    expect(lastText(CLAIMER)).toContain('ادمین این ربات شدید');
+    await text(CLAIMER, '/start');
+    expect(sent(CLAIMER).some((c) => String(c.params.text).includes('پنل مدیریت'))).toBe(true);
+
+    await press(ADMIN, 'a:admins');
+    expect(buttons(lastWithButtons(ADMIN)).map((b) => b.callback_data)).toContain(`a:admins:rm:${CLAIMER}`);
+    await press(ADMIN, `a:admins:rm:${CLAIMER}`);
+    await text(CLAIMER, '/start');
+    expect(lastText(CLAIMER)).not.toContain('پنل مدیریت');
+  });
+
+  it('uses the shop name and tracking prefix the seller sets', async () => {
+    await press(ADMIN, 'a:set:shop_name');
+    await text(ADMIN, 'کتاب‌فروشی تست');
+    await press(ADMIN, 'a:set:track_prefix');
+    await text(ADMIN, 'ielts!');
+    expect(lastText(ADMIN)).toContain('فقط حروف انگلیسی');
+    await text(ADMIN, 'ielts');
+    expect(lastText(ADMIN)).toContain('IELTS-XXXXX');
+
+    await text(BUYER, '/start');
+    expect(sent(BUYER).at(-2)!.params.text).toContain('کتاب‌فروشی تست');
+    await press(BUYER, 'add:1:1');
+    await checkoutToPayment();
+    await photo(BUYER, 'RECEIPT_PREFIX');
+    expect(lastText(BUYER)).toMatch(/<code>IELTS-[0-9A-Z]{5}<\/code>/);
+  });
+
+  it('shows orders awaiting review on the admin panel', async () => {
+    await text(ADMIN, '/start');
+    const root = sent(ADMIN).at(-2)!;
+    expect(root.params.text).toContain('سفارش منتظر تایید شماست');
+    expect(buttons(root)[0]!.text).toContain('🟡');
+  });
+
+  it('manages categories from one page: rename, icon, delete only when empty', async () => {
+    await press(ADMIN, 'a:cats');
+    expect(buttons(lastWithButtons(ADMIN)).some((b) => b.text.includes('Books') && b.text.includes('۱ محصول'))).toBe(true);
+    await press(ADMIN, 'a:cat:1');
+    expect(buttons(lastWithButtons(ADMIN)).map((b) => b.callback_data)).not.toContain('a:cat:del:1'); // has a product
+    await press(ADMIN, 'a:cat:delok:1'); // even a forged confirm can't delete it
+    expect(sent(ADMIN).some((c) => String(c.params.text).includes('محصول دارد و حذف نشد'))).toBe(true);
+
+    await press(ADMIN, 'a:cat:edit:1:name');
+    await text(ADMIN, 'کتاب‌ها');
+    await press(ADMIN, 'a:cat:edit:1:icon');
+    await text(ADMIN, '📕');
+    expect(lastText(ADMIN)).toContain('📕 <b>کتاب‌ها</b>');
+
+    await press(ADMIN, 'a:cat:add');
+    await text(ADMIN, 'Empty');
+    await text(ADMIN, '🗑');
+    await press(ADMIN, 'a:cats');
+    const empty = buttons(lastWithButtons(ADMIN)).find((b) => b.text.includes('Empty'))!;
+    const id = empty.callback_data.split(':')[2];
+    await press(ADMIN, `a:cat:del:${id}`);
+    await press(ADMIN, `a:cat:delok:${id}`);
+    await press(ADMIN, 'a:cats');
+    expect(buttons(lastWithButtons(ADMIN)).some((b) => b.text.includes('Empty'))).toBe(false);
+  });
+
+  it('edits and deletes FAQs', async () => {
+    await press(ADMIN, 'a:faq:add');
+    await text(ADMIN, 'زمان ارسال؟');
+    await text(ADMIN, '۲ روز');
+    await press(ADMIN, 'a:faqs');
+    const faq = buttons(lastWithButtons(ADMIN)).find((b) => b.text.includes('زمان ارسال'))!;
+    const id = faq.callback_data.split(':')[2];
+    await press(ADMIN, `a:faq:edit:${id}:answer`);
+    await text(ADMIN, '۳ روز کاری');
+    expect(lastText(ADMIN)).toContain('۳ روز کاری');
+    await press(BUYER, `faq:${id}`);
+    expect(lastText(BUYER)).toContain('۳ روز کاری');
+    await press(ADMIN, `a:faq:del:${id}`);
+    await press(ADMIN, `a:faq:delok:${id}`);
+    await press(ADMIN, 'a:faqs');
+    expect(buttons(lastWithButtons(ADMIN)).some((b) => b.text.includes('زمان ارسال'))).toBe(false);
   });
 });

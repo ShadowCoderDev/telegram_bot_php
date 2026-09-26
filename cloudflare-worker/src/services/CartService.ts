@@ -1,5 +1,5 @@
 import type { Order, OrderLine, Product, UserRow } from '../db/models';
-import type { OrderRepository, ProductRepository } from '../db/repositories';
+import type { OrderRepository, ProductRepository, SettingsRepository } from '../db/repositories';
 import { generateTrackId } from '../utils/trackId';
 
 export const MAX_QTY = 99;
@@ -22,15 +22,17 @@ export class CartService {
   constructor(
     private readonly orders: OrderRepository,
     private readonly products: ProductRepository,
+    private readonly settings: SettingsRepository,
   ) {}
 
   /** The user's open (pending) order, created on demand. */
   async openCart(user: UserRow): Promise<Order> {
     const existing = await this.orders.findPendingForUser(user.id);
     if (existing) return existing;
+    const prefix = await this.settings.get('track_prefix');
     for (let attempt = 0; ; attempt++) {
       try {
-        const id = await this.orders.create(user.id, user.chat_id, generateTrackId());
+        const id = await this.orders.create(user.id, user.chat_id, generateTrackId(5, prefix));
         return (await this.orders.find(id))!;
       } catch (err) {
         // Track-id collision on the UNIQUE index: try another one.

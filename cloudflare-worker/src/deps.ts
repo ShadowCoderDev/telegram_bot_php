@@ -25,6 +25,7 @@ export function createDeps(env: Env, publicOrigin: string) {
   const users = new UserRepository(env.DB);
   const orders = new OrderRepository(env.DB);
   const products = new ProductRepository(env.DB);
+  const settings = new SettingsRepository(env.DB);
   return {
     tg,
     users,
@@ -32,15 +33,18 @@ export function createDeps(env: Env, publicOrigin: string) {
     products,
     categories: new CategoryRepository(env.DB),
     faqs: new FaqRepository(env.DB),
-    settings: new SettingsRepository(env.DB),
+    settings,
     sessions: new SessionRepository(env.DB),
     dialogs: new DialogRepository(env.DB),
     updateLog: new UpdateLogRepository(env.DB),
     floodLimit: Number(env.FLOOD_LIMIT) || 30,
-    cart: new CartService(orders, products),
+    cart: new CartService(orders, products, settings),
     orderService: new OrderService(orders),
     files: env.FILES ? new FileStore(env.FILES, tg, publicOrigin) : null,
+    /** Admins from ADMIN_CHAT_IDS; the bot adds the ones who joined with /claim per update. */
+    envAdminIds: parseAdminIds(env.ADMIN_CHAT_IDS),
     adminIds: parseAdminIds(env.ADMIN_CHAT_IDS),
+    webhookSecret: env.WEBHOOK_SECRET ?? '',
     /** Finds the shopper's row, creating it on first contact. */
     async user(ctx: { chatId: number; firstName: string; username: string }): Promise<UserRow> {
       return (await users.findByChatId(ctx.chatId)) ?? users.upsert(ctx.chatId, ctx.firstName, ctx.username);

@@ -14,6 +14,7 @@ export function createBot(d: Deps) {
   const adminRouter = registerAdminRoutes(new Router(), d);
 
   return async function handleUpdate(update: Update): Promise<void> {
+    d.adminIds = [...new Set([...d.envAdminIds, ...(await d.settings.claimedAdmins())])];
     const ctx = new BotContext(update, d.tg, d.adminIds);
     // Channel posts, edited messages, and anything in groups: the shop only works in private chats.
     if (!ctx.chatId || ctx.chatType !== 'private') return;

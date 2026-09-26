@@ -8,7 +8,7 @@
     "deploy": "node scripts/deploy.mjs",
     "db:migrate:local": "wrangler d1 migrations apply shop --local",
     "typecheck": "tsc --noEmit && tsc --noEmit -p test",
-    "test": "vitest run test/unit.test.ts test/repositories.test.ts",
+    "test": "vitest run test/unit.test.ts test/repositories.test.ts test/migrate.test.ts",
     "test:e2e": "vitest run test/e2e.test.ts"
   },
   "devDependencies": {
@@ -17,5 +17,18 @@
     "typescript": "^5.9.3",
     "vitest": "^3.2.7",
     "wrangler": "^4.141.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "BOT_TOKEN": {
+        "description": "توکن ربات از [@BotFather](https://t.me/BotFather) — مثل `123456:ABC...`"
+      },
+      "WEBHOOK_SECRET": {
+        "description": "یک رمز تصادفی **حداقل ۱۶ کاراکتر** (فقط حروف انگلیسی، عدد، `_` و `-`). بعد از دیپلوی با فرستادن `/claim رمز` در ربات، ادمین می‌شوید."
+      },
+      "ADMIN_CHAT_IDS": {
+        "description": "اختیاری. شناسه‌ی عددی ادمین‌ها با کاما. می‌توانید خالی بگذارید و از `/claim` استفاده کنید."
+      }
+    }
   }
 }

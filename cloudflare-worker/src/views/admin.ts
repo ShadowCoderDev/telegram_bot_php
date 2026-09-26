@@ -1,4 +1,4 @@
-import type { Category, CustomerSummary, Faq, Order, Product } from '../db/models';
+import type { Category, CategoryWithCount, CustomerSummary, Faq, Order, Product } from '../db/models';
 import type { SettingKey } from '../db/repositories';
 import type { FullOrder } from '../services/OrderService';
 import { ALLOWED_ACTIONS, STATUS_FA, type AdminOrderAction } from '../services/orderStatus';
@@ -35,15 +35,21 @@ const pager = (page: number, pages: number, toData: (page: number) => string): I
         ],
       ];
 
-export const adminRoot = (): View => ({
-  text: sections(heading('🔐', 'پنل مدیریت'), '👇 یکی از بخش‌ها را انتخاب کنید:'),
+export const adminRoot = (awaitingReview = 0): View => ({
+  text: sections(
+    heading('🔐', 'پنل مدیریت'),
+    awaitingReview ? `🟡 <b>${fa(awaitingReview)}</b> سفارش منتظر تایید شماست.` : '',
+    '👇 یکی از بخش‌ها را انتخاب کنید:',
+  ),
   keyboard: inline(
-    [button('🧾 سفارشات', A.orders, 'primary'), button('👥 مشتریان', A.customers, 'primary')],
+    [
+      button(awaitingReview ? `🧾 سفارشات (🟡 ${fa(awaitingReview)})` : '🧾 سفارشات', A.orders, 'primary'),
+      button('👥 مشتریان', A.customers, 'primary'),
+    ],
     [button('📊 آمار', A.stats)],
     [button('➕ محصول جدید', A.addProduct, 'success'), button('➕ دسته‌بندی جدید', A.addCategory, 'success')],
     [button('✏️ محصولات', A.products), button('📂 دسته‌بندی‌ها', A.categories)],
     [button('❓ سوالات متداول', A.faqs), button('⚙️ تنظیمات', A.settings)],
-    [button('🗑 حذف دسته‌بندی', A.deleteCategories, 'danger')],
     [button('👀 نمایش منوی کاربر', CB.home)],
   ),
 });
@@ -67,70 +73,123 @@ export const statsView = (s: { users: number; products: number; completed: numbe
 /* ---------- settings ---------- */
 
 export const SETTING_LABELS: Record<SettingKey, { button: string; prompt: string }> = {
-  help_text: { button: '📝 متن راهنما', prompt: 'متن جدید <b>راهنما</b> را بفرستید:' },
-  support: { button: '🗣️ آیدی پشتیبانی', prompt: 'آیدی یا متن جدید <b>پشتیبانی</b> را بفرستید:' },
+  shop_name: { button: '🏪 نام فروشگاه', prompt: '<b>نام فروشگاه</b> را بفرستید (در منوی اصلی نمایش داده می‌شود):' },
+  welcome_text: { button: '👋 متن خوش‌آمد', prompt: '<b>متن خوش‌آمد</b> منوی اصلی را بفرستید:' },
+  track_prefix: {
+    button: '🧾 پیشوند کد رهگیری',
+    prompt: `<b>پیشوند کد رهگیری</b> را بفرستید (فقط حروف انگلیسی و عدد، حداکثر ۸).\n${hint('مثال: IELTS  →  کدها مثل IELTS-7K2QD')}`,
+  },
   bank_info: { button: '💳 اطلاعات کارت', prompt: 'اطلاعات جدید <b>کارت بانکی</b> را بفرستید:' },
+  support: { button: '🗣️ آیدی پشتیبانی', prompt: 'آیدی یا متن جدید <b>پشتیبانی</b> را بفرستید:' },
+  help_text: { button: '📝 متن راهنما', prompt: 'متن جدید <b>راهنما</b> را بفرستید:' },
 };
 
-export const settingsMenu = (): View => ({
-  text: sections(heading('⚙️', 'تنظیمات ربات'), '👇 کدام بخش را ویرایش می‌کنید؟'),
+export const settingsMenu = (values: Record<SettingKey, string>): View => ({
+  text: sections(
+    heading('⚙️', 'تنظیمات ربات'),
+    quote(
+      `🏪 <b>${e(values.shop_name)}</b>\n` +
+        `👋 ${e(truncate(values.welcome_text, 60))}\n` +
+        `🧾 کد رهگیری: <code>${e(values.track_prefix)}XXXXX</code>\n` +
+        `💳 ${e(truncate(values.bank_info, 40))}\n` +
+        `🗣️ ${e(truncate(values.support, 40))}`,
+    ),
+    '👇 کدام بخش را ویرایش می‌کنید؟',
+  ),
   keyboard: inline(
-    ...(Object.keys(SETTING_LABELS) as SettingKey[]).map((k) => [button(SETTING_LABELS[k].button, A.editSetting(k))]),
+    [button(SETTING_LABELS.shop_name.button, A.editSetting('shop_name')), button(SETTING_LABELS.welcome_text.button, A.editSetting('welcome_text'))],
+    [button(SETTING_LABELS.bank_info.button, A.editSetting('bank_info')), button(SETTING_LABELS.support.button, A.editSetting('support'))],
+    [button(SETTING_LABELS.help_text.button, A.editSetting('help_text')), button(SETTING_LABELS.track_prefix.button, A.editSetting('track_prefix'))],
+    [button('👮 ادمین‌ها', A.admins)],
     toAdminRoot(),
   ),
 });
 
-/* ---------- FAQs & categories ---------- */
+/** Admins from the Worker config can't be removed here; ones who joined with /claim can. */
+export const adminsPage = (configured: number[], claimed: number[], me: number): View => ({
+  text: sections(
+    heading('👮', 'ادمین‌ها'),
+    quote(
+      [
+        ...configured.map((id) => `🔒 <code>${id}</code> ${hint('(از تنظیمات Cloudflare)')}`),
+        ...claimed.filter((id) => !configured.includes(id)).map((id) => `👤 <code>${id}</code>${id === me ? ` ${hint('(شما)')}` : ''}`),
+      ].join('\n') || hint('هیچ ادمینی ثبت نشده'),
+    ),
+    `➕ برای افزودن ادمین جدید، او باید در ربات این را بفرستد:\n<code>/claim WEBHOOK_SECRET</code>\n${hint('WEBHOOK_SECRET همان رمزی است که هنگام دیپلوی تعیین کردید؛ آن را فقط به افراد مورد اعتماد بدهید.')}`,
+  ),
+  keyboard: inline(
+    ...claimed.filter((id) => !configured.includes(id)).map((id) => [button(`🗑 حذف ${id}`, A.removeAdmin(id), 'danger')]),
+    backRow(A.settings, '🔙 تنظیمات'),
+  ),
+});
+
+/* ---------- FAQs ---------- */
+
+export const faqsManage = (faqs: Faq[]): View => ({
+  text: sections(heading('❓', 'سوالات متداول'), faqs.length ? '👇 برای ویرایش یا حذف، روی سوال بزنید.' : hint('هنوز سوالی ثبت نشده است.'), faqs.length ? hint('🟢 فعال   🔴 غیرفعال') : ''),
+  keyboard: inline(
+    [button('➕ افزودن سوال جدید', A.addFaq, 'success')],
+    ...faqs.map((f) => [button(`${statusIcon(f.status)} ${truncate(f.question, 40)}`, A.faq(f.id))]),
+    toAdminRoot(),
+  ),
+});
+
+export const faqPage = (f: Faq): View => ({
+  text: sections(
+    `❓ <b>${e(f.question)}</b>`,
+    expandable(`✅ ${e(f.answer)}`),
+    `📌 وضعیت: ${f.status === 'enable' ? '🟢 فعال (به مشتری‌ها نمایش داده می‌شود)' : '🔴 غیرفعال (پنهان)'}`,
+  ),
+  keyboard: inline(
+    [button('✏️ ویرایش سوال', A.editFaq(f.id, 'question')), button('✏️ ویرایش پاسخ', A.editFaq(f.id, 'answer'))],
+    [toggleButton(f.status, A.toggleFaq(f.id)), button('🗑 حذف', A.deleteFaq(f.id), 'danger')],
+    backRow(A.faqs, '🔙 لیست سوالات'),
+  ),
+});
+
+export const faqDeleteConfirm = (f: Faq): View => ({
+  text: sections(heading('⚠️', 'حذف سوال'), quote(e(f.question)), hint('این کار قابل بازگشت نیست.')),
+  keyboard: inline([button('🗑 بله، حذف کن', A.deleteFaqConfirm(f.id), 'danger'), button('انصراف', A.faq(f.id))]),
+});
+
+/* ---------- categories ---------- */
 
 const toggleButton = (status: string, data: string) =>
   status === 'enable' ? button('🔴 غیرفعال کن', data, 'danger') : button('🟢 فعال کن', data, 'success');
 
-export const faqsManage = (faqs: Faq[]): View => ({
-  text: sections(heading('❓', 'سوالات متداول'), hint('🟢 فعال   🔴 غیرفعال')),
+export const categoriesManage = (cats: CategoryWithCount[]): View => ({
+  text: sections(
+    heading('📂', 'دسته‌بندی‌ها'),
+    cats.length ? '👇 برای ویرایش، فعال/غیرفعال کردن یا حذف، روی دسته‌بندی بزنید.' : hint('هنوز دسته‌بندی‌ای ساخته نشده است.'),
+    cats.length ? hint('🟢 فعال   🔴 غیرفعال') : '',
+  ),
   keyboard: inline(
-    [button('➕ افزودن سوال جدید', A.addFaq, 'success')],
-    ...faqs.map((f) => [button(`${statusIcon(f.status)} ${truncate(f.question, 28)}`, CB.noop), toggleButton(f.status, A.toggleFaq(f.id))]),
+    [button('➕ دسته‌بندی جدید', A.addCategory, 'success')],
+    ...cats.map((c) => [button(`${statusIcon(c.status)} ${c.icon} ${c.name} · ${fa(c.product_count)} محصول`, A.category(c.id))]),
     toAdminRoot(),
   ),
 });
 
-export const categoriesManage = (cats: Category[]): View =>
-  cats.length
-    ? {
-        text: sections(heading('📂', 'دسته‌بندی‌ها'), hint('🟢 فعال   🔴 غیرفعال')),
-        keyboard: inline(
-          ...cats.map((c) => [button(`${statusIcon(c.status)} ${c.icon} ${c.name}`, CB.noop), toggleButton(c.status, A.toggleCategory(c.id))]),
-          toAdminRoot(),
-        ),
-      }
-    : done(sections(heading('📂', 'دسته‌بندی‌ها'), 'هنوز دسته‌بندی‌ای ساخته نشده است.'));
+export const categoryPage = (c: CategoryWithCount): View => ({
+  text: sections(
+    `${c.icon} <b>${e(c.name)}</b>`,
+    quote(
+      `📦 تعداد محصولات: <b>${fa(c.product_count)}</b>\n` +
+        `📌 وضعیت: ${c.status === 'enable' ? '🟢 فعال' : '🔴 غیرفعال (این دسته و محصولاتش از دید مشتری پنهان‌اند)'}`,
+    ),
+    c.product_count ? hint('🗑 حذف فقط برای دسته‌بندی خالی ممکن است؛ اول محصولاتش را به دسته‌ی دیگری منتقل کنید.') : '',
+  ),
+  keyboard: inline(
+    [button('✏️ تغییر نام', A.editCategory(c.id, 'name')), button('🎨 تغییر ایموجی', A.editCategory(c.id, 'icon'))],
+    [toggleButton(c.status, A.toggleCategory(c.id)), ...(c.product_count ? [] : [button('🗑 حذف', A.deleteCategory(c.id), 'danger')])],
+    backRow(A.categories, '🔙 لیست دسته‌بندی‌ها'),
+  ),
+});
 
-export const categoryDeleteList = (cats: Category[]): View =>
-  cats.length
-    ? {
-        text: sections(
-          heading('🗑', 'حذف دسته‌بندی'),
-          '👇 دسته‌بندی مورد نظر را انتخاب کنید:',
-          hint('⚠️ فقط دسته‌بندی‌های بدون محصول قابل حذف هستند.'),
-        ),
-        keyboard: inline(...cats.map((c) => [button(`${c.icon} ${c.name}`, A.deleteCategory(c.id))]), toAdminRoot()),
-      }
-    : done(sections(heading('🗑', 'حذف دسته‌بندی'), 'دسته‌بندی‌ای برای حذف وجود ندارد.'));
-
-export const categoryDeleteConfirm = (c: Category, hasProducts: boolean): View =>
-  hasProducts
-    ? {
-        text: sections(
-          heading('🚫', 'امکان حذف وجود ندارد'),
-          quote(`${c.icon} <b>${e(c.name)}</b> هنوز محصول دارد.`),
-          hint('اول محصولات این دسته را به دسته‌ی دیگری منتقل کنید.'),
-        ),
-        keyboard: inline(backRow(A.deleteCategories)),
-      }
-    : {
-        text: sections(heading('⚠️', 'حذف دسته‌بندی'), quote(`${c.icon} <b>${e(c.name)}</b>`), hint('این کار قابل بازگشت نیست.')),
-        keyboard: inline([button('🗑 بله، حذف کن', A.deleteCategoryConfirm(c.id), 'danger'), button('انصراف', A.deleteCategories)]),
-      };
+export const categoryDeleteConfirm = (c: Category): View => ({
+  text: sections(heading('⚠️', 'حذف دسته‌بندی'), quote(`${c.icon} <b>${e(c.name)}</b>`), hint('این کار قابل بازگشت نیست.')),
+  keyboard: inline([button('🗑 بله، حذف کن', A.deleteCategoryConfirm(c.id), 'danger'), button('انصراف', A.category(c.id))]),
+});
 
 /** Category picker used both when creating a product and when moving one. */
 export const categoryPicker = (cats: Category[], title: string, toData: (c: Category) => string, back: InlineKeyboardButton[]): View => ({

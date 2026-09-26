@@ -5,21 +5,22 @@
   "compatibility_date": "2026-09-01",
   "observability": { "enabled": true },
 
-  // Deploy with `npm run deploy` (scripts/deploy.mjs). It creates the D1 database and R2 bucket
-  // when missing, fills in the ids, uploads the secrets (BOT_TOKEN, WEBHOOK_SECRET) and sets the
-  // Telegram webhook, so nothing in this file needs to be edited by hand. Locally use .dev.vars.
+  // Deploy with `npm run deploy` (scripts/deploy.mjs) or the "Deploy to Cloudflare" button.
+  // The Worker creates its own tables on first use and registers its Telegram webhook when its URL
+  // is opened, so nothing in this file needs editing. Secrets: BOT_TOKEN, WEBHOOK_SECRET.
   "vars": {
-    "ADMIN_CHAT_IDS": "2020715168",
+    // Optional: numeric chat ids of admins, comma separated. Sellers can instead send
+    // `/claim <WEBHOOK_SECRET>` to their bot to become admin.
+    "ADMIN_CHAT_IDS": "",
     "TELEGRAM_API_BASE": "https://api.telegram.org"
   },
 
-  // Replaces MySQL. database_id is looked up by name at deploy time; the placeholder is only for local dev.
-  "d1_databases": [
-    { "binding": "DB", "database_name": "shop", "database_id": "REPLACE_WITH_D1_ID", "migrations_dir": "migrations" }
-  ],
+  // Replaces MySQL. The database is created on first deploy and its id filled in automatically.
+  "d1_databases": [{ "binding": "DB", "database_name": "shop", "migrations_dir": "migrations" }],
 
-  // Replaces the local uploads/ folder. Optional: dropped automatically if R2 isn't enabled on the account.
-  "r2_buckets": [
-    { "binding": "FILES", "bucket_name": "shop-files" }
-  ]
+  // Migration files are bundled as text so the Worker can apply them itself (src/db/migrate.ts).
+  "rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }]
+
+  // Optional receipt archive in R2 (needs R2 enabled on the account, which asks for a payment method):
+  // "r2_buckets": [{ "binding": "FILES", "bucket_name": "shop-files" }]
 }

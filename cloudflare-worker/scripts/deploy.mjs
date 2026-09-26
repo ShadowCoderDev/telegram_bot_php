@@ -11,10 +11,15 @@
  *
  * Safe to run again at any time; every step checks what already exists.
  *
+ * Without BOT_TOKEN and without a terminal (e.g. Cloudflare Workers Builds after the "Deploy to
+ * Cloudflare" button) it only deploys the code: the Worker creates its tables itself and registers
+ * the webhook when its URL is opened.
+ *
  * Inputs (env vars; asked interactively when missing and a terminal is attached):
  *   BOT_TOKEN        required  token from @BotFather
  *   WEBHOOK_SECRET   optional  generated when absent (the webhook is re-registered with it every run)
- *   ADMIN_CHAT_IDS   optional  overrides the value in wrangler.jsonc
+ *   ADMIN_CHAT_IDS   optional  overrides the value in wrangler.jsonc (sellers can also use /claim)
+ *   WORKER_NAME      optional  deploy under another name (several sellers in one Cloudflare account)
  *   WORKER_URL       optional  public URL when not using *.workers.dev (custom domain)
  *   SKIP_R2=1        optional  don't use R2 even if it is available
  */
@@ -78,6 +83,17 @@ const readConfig = () => JSON.parse(readFileSync('wrangler.jsonc', 'utf8').repla
 
 async function main() {
   const config = readConfig();
+  if (process.env.WORKER_NAME) {
+    config.name = process.env.WORKER_NAME;
+    config.d1_databases = config.d1_databases?.map((db) => ({ ...db, database_name: `${process.env.WORKER_NAME}-db` }));
+  }
+  if (!process.env.BOT_TOKEN && !interactive) {
+    console.log('No BOT_TOKEN in a non-interactive build: deploying code only.');
+    const r = wrangler(['deploy'], { inherit: true });
+    if (!r.ok) fail('wrangler deploy failed');
+    console.log('\n✅ Deployed. Open the Worker URL once to finish setup (webhook + admin instructions).');
+    return;
+  }
   const d1 = config.d1_databases?.[0];
   const r2 = config.r2_buckets?.[0];
   if (!d1) fail('wrangler.jsonc has no d1_databases entry');
@@ -103,10 +119,15 @@ async function main() {
   ok(`bot @${me.result.username}`);
 
   const webhookSecret = process.env.WEBHOOK_SECRET?.trim() || randomBytes(32).toString('hex');
-  if (!/^[A-Za-z0-9_-]{1,256}$/.test(webhookSecret)) fail('WEBHOOK_SECRET may only contain A-Z a-z 0-9 _ -');
+  if (!/^[A-Za-z0-9_-]{16,256}$/.test(webhookSecret)) fail('WEBHOOK_SECRET must be 16+ characters of A-Z a-z 0-9 _ -');
+  if (!process.env.WEBHOOK_SECRET) {
+    // Never print secrets into CI logs; a generated one changes every run anyway.
+    if (interactive) warn(`Generated WEBHOOK_SECRET – keep it, it is the code for /claim: ${webhookSecret}`);
+    else warn('WEBHOOK_SECRET is not set: a new one is generated each deploy, so /claim needs ADMIN_CHAT_IDS or a fixed secret.');
+  }
   const adminIds = process.env.ADMIN_CHAT_IDS?.trim() || config.vars?.ADMIN_CHAT_IDS;
-  if (!adminIds) fail('ADMIN_CHAT_IDS is empty');
-  ok(`admins: ${adminIds}`);
+  if (adminIds) ok(`admins: ${adminIds}`);
+  else warn('ADMIN_CHAT_IDS is empty – send `/claim <WEBHOOK_SECRET>` to the bot to become admin.');
 
   /* ---------- 2. D1 ---------- */
   step(2, `D1 database "${d1.database_name}"`);

@@ -19,7 +19,9 @@ const A = CB.admin;
 const FLOW = {
   setting: 'edit_setting',
   faq: 'add_faq',
+  editFaq: 'edit_faq',
   category: 'add_category',
+  editCategory: 'edit_category',
   product: 'add_product',
   edit: 'edit_product',
   dialog: 'dialog',
@@ -39,7 +41,18 @@ const FAQ_STEP = (n: number, body: string) => v.formStep('افزودن سوال 
  * to the user routes, so an admin can also browse the shop like a customer.
  */
 export function registerAdminRoutes(router: Router, d: Deps): Router {
-  const showRoot = (ctx: BotContext) => ctx.render(v.adminRoot());
+  const showAdmins = async (ctx: BotContext) => ctx.render(v.adminsPage(d.envAdminIds, await d.settings.claimedAdmins(), ctx.chatId));
+  const showRoot = async (ctx: BotContext) => ctx.render(v.adminRoot(await d.orders.countAllAwaitingReview()));
+  const showFaqs = async (ctx: BotContext) => ctx.render(v.faqsManage(await d.faqs.list(false)));
+  const showFaq = async (ctx: BotContext, id: number) => {
+    const faq = await d.faqs.find(id);
+    await (faq ? ctx.render(v.faqPage(faq)) : showFaqs(ctx));
+  };
+  const showCategories = async (ctx: BotContext) => ctx.render(v.categoriesManage(await d.categories.listWithCounts()));
+  const showCategory = async (ctx: BotContext, id: number) => {
+    const cat = await d.categories.findWithCount(id);
+    await (cat ? ctx.render(v.categoryPage(cat)) : showCategories(ctx));
+  };
   const showProduct = async (ctx: BotContext, id: number) => {
     const p = await d.products.find(id);
     if (!p) return ctx.render(v.done('❌ محصول یافت نشد.'));
@@ -84,7 +97,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
   return (
     router
       .text(['/start', '/admin', v.ADMIN_HOME], async (ctx) => {
-        await ctx.reply(v.adminRoot());
+        await ctx.reply(v.adminRoot(await d.orders.countAllAwaitingReview()));
         await ctx.reply(v.adminReplyKeyboard());
       })
       .text('/cancel', async (ctx) => {
@@ -109,41 +122,74 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
       })
 
       /* ----- settings ----- */
-      .callback(A.settings, (ctx) => ctx.render(v.settingsMenu()))
+      .callback(A.settings, async (ctx) => ctx.render(v.settingsMenu(await d.settings.getMany(SETTING_KEYS))))
+      .callback(A.admins, (ctx) => showAdmins(ctx))
+      .callback(/^a:admins:rm:(\d+)$/, async (ctx, [chatId]) => {
+        await d.settings.removeAdmin(Number(chatId));
+        await ctx.reply({ text: `✅ ادمین ${chatId} حذف شد.` });
+        await showAdmins(ctx);
+      })
       .callback(/^a:set:(\w+)$/, async (ctx, [key]) => {
         if (!SETTING_KEYS.includes(key as SettingKey)) return;
         await start(ctx, FLOW.setting, 'value', { key }, v.SETTING_LABELS[key as SettingKey].prompt);
       })
 
       /* ----- FAQs ----- */
-      .callback(A.faqs, async (ctx) => ctx.render(v.faqsManage(await d.faqs.list(false))))
+      .callback(A.faqs, showFaqs)
       .callback(A.addFaq, (ctx) => start(ctx, FLOW.faq, 'question', {}, FAQ_STEP(1, '❓ متن کامل <b>سوال</b> را بفرستید:')))
+      .callback(/^a:faq:(\d+)$/, (ctx, [id]) => showFaq(ctx, Number(id)))
+      .callback(/^a:faq:edit:(\d+):(question|answer)$/, async (ctx, [id, field]) => {
+        const faq = await d.faqs.find(Number(id));
+        if (!faq) return showFaqs(ctx);
+        const current = field === 'question' ? faq.question : faq.answer;
+        await start(ctx, FLOW.editFaq, field!, { faqId: faq.id }, sections(
+          heading('✏️', field === 'question' ? 'ویرایش سوال' : 'ویرایش پاسخ'),
+          `${hint('متن فعلی (برای کپی لمس کنید):')}\n<code>${e(current)}</code>`,
+          'متن جدید را بفرستید:',
+        ));
+      })
       .callback(/^a:faq:toggle:(\d+)$/, async (ctx, [id]) => {
         const faq = await d.faqs.find(Number(id));
         if (faq) await d.faqs.setStatus(faq.id, flip(faq.status));
-        await ctx.render(v.faqsManage(await d.faqs.list(false)));
+        await showFaq(ctx, Number(id));
+      })
+      .callback(/^a:faq:del:(\d+)$/, async (ctx, [id]) => {
+        const faq = await d.faqs.find(Number(id));
+        await ctx.render(faq ? v.faqDeleteConfirm(faq) : v.faqsManage(await d.faqs.list(false)));
+      })
+      .callback(/^a:faq:delok:(\d+)$/, async (ctx, [id]) => {
+        await d.faqs.delete(Number(id));
+        await ctx.reply({ text: '✅ سوال حذف شد.' });
+        await showFaqs(ctx);
       })
 
       /* ----- categories ----- */
-      .callback(A.categories, async (ctx) => ctx.render(v.categoriesManage(await d.categories.list(false))))
+      .callback(A.categories, showCategories)
       .callback(A.addCategory, (ctx) => start(ctx, FLOW.category, 'name', {}, CATEGORY_STEP(1, '📂 <b>نام</b> دسته‌بندی را بفرستید:')))
+      .callback(/^a:cat:(\d+)$/, (ctx, [id]) => showCategory(ctx, Number(id)))
+      .callback(/^a:cat:edit:(\d+):(name|icon)$/, async (ctx, [id, field]) => {
+        const cat = await d.categories.find(Number(id));
+        if (!cat) return showCategories(ctx);
+        await start(ctx, FLOW.editCategory, field!, { categoryId: cat.id }, sections(
+          heading('✏️', `ویرایش دسته‌بندی ${cat.icon} ${e(cat.name)}`),
+          field === 'name' ? '📂 <b>نام جدید</b> را بفرستید:' : `🎨 <b>ایموجی جدید</b> را بفرستید.\n${hint('مثال: 📚  🎧  ✨')}`,
+        ));
+      })
       .callback(/^a:cat:toggle:(\d+)$/, async (ctx, [id]) => {
         const cat = await d.categories.find(Number(id));
         if (cat) await d.categories.setStatus(cat.id, flip(cat.status));
-        await ctx.render(v.categoriesManage(await d.categories.list(false)));
+        await showCategory(ctx, Number(id));
       })
-      .callback(A.deleteCategories, async (ctx) => ctx.render(v.categoryDeleteList(await d.categories.list(false))))
       .callback(/^a:cat:del:(\d+)$/, async (ctx, [id]) => {
-        const cat = await d.categories.find(Number(id));
-        if (!cat) return ctx.render(v.done('❌ دسته‌بندی یافت نشد.'));
-        await ctx.render(v.categoryDeleteConfirm(cat, await d.categories.hasProducts(cat.id)));
+        const cat = await d.categories.findWithCount(Number(id));
+        if (!cat) return showCategories(ctx);
+        await ctx.render(cat.product_count ? v.categoryPage(cat) : v.categoryDeleteConfirm(cat));
       })
       .callback(/^a:cat:delok:(\d+)$/, async (ctx, [id]) => {
-        const catId = Number(id);
-        if (await d.categories.hasProducts(catId)) return ctx.render(v.done('🚫 این دسته‌بندی شامل محصول است و قابل حذف نیست.'));
-        await d.categories.delete(catId);
-        await ctx.reply({ text: '✅ دسته‌بندی حذف شد.' });
-        await ctx.render(v.categoryDeleteList(await d.categories.list(false)));
+        // Checked again inside the DELETE, in case a product was moved in meanwhile.
+        const deleted = await d.categories.deleteIfEmpty(Number(id));
+        await ctx.reply({ text: deleted ? '✅ دسته‌بندی حذف شد.' : '🚫 این دسته‌بندی محصول دارد و حذف نشد.' });
+        await showCategories(ctx);
       })
 
       /* ----- products ----- */
@@ -318,10 +364,18 @@ async function adminFlowStep(ctx: BotContext, s: Session<Data>, d: Deps): Promis
     case FLOW.setting: {
       if (!text) return needText();
       if (await tooLong(LIMITS.setting)) return;
-      await d.settings.set(s.data.key as SettingKey, text);
+      const key = s.data.key as SettingKey;
+      let value = text;
+      if (key === 'track_prefix') {
+        // Tracking codes must stay short and ASCII: "IELTS" → "IELTS-".
+        const prefix = text.toUpperCase().replace(/-+$/, '');
+        if (!/^[A-Z0-9]{1,8}$/.test(prefix)) return ctx.reply(v.prompt('⚠️ فقط حروف انگلیسی و عدد، حداکثر ۸ کاراکتر. مثال: IELTS'));
+        value = `${prefix}-`;
+      }
+      await d.settings.set(key, value);
       await d.sessions.clear(ctx.chatId);
       await ctx.reply({ text: '✅ تنظیمات با موفقیت به‌روزرسانی شد.' });
-      return ctx.reply(v.settingsMenu());
+      return ctx.reply(v.settingsMenu(await d.settings.getMany(SETTING_KEYS)));
     }
 
     case FLOW.faq: {
@@ -338,6 +392,29 @@ async function adminFlowStep(ctx: BotContext, s: Session<Data>, d: Deps): Promis
       if (s.step === 'name') return next('icon', { name: text }, CATEGORY_STEP(2, `🎨 یک <b>ایموجی</b> برای دسته‌بندی بفرستید.\n${hint('مثال: 📚  🎧  ✨')}`));
       await d.categories.create(String(s.data.name), text);
       return finish(sections(heading('✅', 'دسته‌بندی اضافه شد'), quote(`${e(text)} <b>${e(String(s.data.name))}</b>`)));
+    }
+
+    case FLOW.editFaq: {
+      if (!text) return needText();
+      const field = s.step === 'question' ? 'question' : 'answer';
+      if (await tooLong(field === 'question' ? LIMITS.faqQuestion : LIMITS.faqAnswer)) return;
+      await d.faqs.update(Number(s.data.faqId), field, text);
+      await d.sessions.clear(ctx.chatId);
+      await ctx.reply({ text: '✅ ذخیره شد.' });
+      const faq = await d.faqs.find(Number(s.data.faqId));
+      return ctx.reply(faq ? v.faqPage(faq) : v.done('❌ سوال یافت نشد.'));
+    }
+
+    case FLOW.editCategory: {
+      if (!text) return needText();
+      const field = s.step === 'name' ? 'name' : 'icon';
+      if (await tooLong(field === 'name' ? LIMITS.categoryName : LIMITS.categoryIcon)) return;
+      const id = Number(s.data.categoryId);
+      await (field === 'name' ? d.categories.rename(id, text) : d.categories.setIcon(id, text));
+      await d.sessions.clear(ctx.chatId);
+      await ctx.reply({ text: '✅ ذخیره شد.' });
+      const cat = await d.categories.findWithCount(id);
+      return ctx.reply(cat ? v.categoryPage(cat) : v.done('❌ دسته‌بندی یافت نشد.'));
     }
 
     case FLOW.product:

@@ -28,6 +28,10 @@ export class TelegramClient {
     private readonly apiBase = 'https://api.telegram.org',
   ) {}
 
+  get hasToken(): boolean {
+    return Boolean(this.token);
+  }
+
   async call<T = unknown>(method: string, params: Params = {}): Promise<T> {
     const res = await fetch(`${this.apiBase}/bot${this.token}/${method}`, {
       method: 'POST',
