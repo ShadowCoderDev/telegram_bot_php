@@ -9,7 +9,7 @@
     "db:migrate:local": "wrangler d1 migrations apply shop --local",
     "typecheck": "tsc --noEmit && tsc --noEmit -p test",
     "test": "vitest run test/unit.test.ts test/repositories.test.ts test/migrate.test.ts",
-    "test:e2e": "vitest run test/e2e.test.ts"
+    "test:e2e": "vitest run --no-file-parallelism test/e2e.test.ts test/platform.e2e.test.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260926.1",

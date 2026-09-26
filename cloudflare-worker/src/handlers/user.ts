@@ -3,7 +3,8 @@ import type { Session } from '../db/models';
 import { clampQty, stockProblems } from '../services/CartService';
 import type { BotContext } from '../telegram/BotContext';
 import type { Router } from '../telegram/Router';
-import { LIMITS, MAX_AWAITING_REVIEW, charCount } from '../limits';
+import { sameSecret } from '../crypto';
+import { LIMITS, MAX_AWAITING_REVIEW, charCount, planLimits } from '../limits';
 import { escapeHtml } from '../utils/format';
 import { isIranMobile, toEnglishDigits } from '../utils/persian';
 import * as admin from '../views/admin';
@@ -13,13 +14,6 @@ import * as v from '../views/user';
 
 export const CHECKOUT = 'checkout';
 const MIN_CLAIM_SECRET = 16;
-
-/** Constant-time comparison (via SHA-256 digests) so the secret can't be guessed byte by byte. */
-async function sameSecret(a: string, b: string): Promise<boolean> {
-  const digest = async (s: string) => new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)));
-  const [x, y] = await Promise.all([digest(a), digest(b)]);
-  return x.reduce((diff, byte, i) => diff | (byte ^ y[i]!), 0) === 0;
-}
 
 /** How long the amount shown at the payment step stays valid before prices are re-read. */
 export const PRICE_LOCK_MINUTES = 60;
@@ -72,11 +66,16 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
         await showHome(ctx);
       })
       .text(/^\/claim(?:\s+(\S+))?$/, async (ctx, [secret]) => {
-        // A seller becomes admin of their own bot by sending the WEBHOOK_SECRET they chose at deploy time.
-        if (d.webhookSecret.length < MIN_CLAIM_SECRET) {
-          return ctx.reply({ text: `⚠️ WEBHOOK_SECRET باید حداقل ${MIN_CLAIM_SECRET} کاراکتر باشد تا /claim فعال شود.` });
+        // Someone the shop owner trusts becomes an extra admin with the shop's claim code
+        // (shown to the seller in the platform bot; WEBHOOK_SECRET for the owner's own shop).
+        if (d.claimCode.length < MIN_CLAIM_SECRET) {
+          return ctx.reply({ text: `⚠️ کد /claim باید حداقل ${MIN_CLAIM_SECRET} کاراکتر باشد تا فعال شود.` });
         }
-        if (!secret || !(await sameSecret(secret, d.webhookSecret))) return ctx.reply({ text: '❌ کد اشتباه است.' });
+        if (!secret || !(await sameSecret(secret, d.claimCode))) return ctx.reply({ text: '❌ کد اشتباه است.' });
+        const limits = planLimits(d.shop.plan);
+        if ((await d.settings.claimedAdmins()).length >= limits.extraAdmins) {
+          return ctx.reply({ text: `⚠️ این فروشگاه حداکثر ${limits.extraAdmins} ادمین اضافه می‌تواند داشته باشد.` });
+        }
         await d.settings.addAdmin(ctx.chatId);
         await ctx.reply({ text: '✅ شما ادمین این ربات شدید. برای ورود به پنل /start را بزنید.' });
       })

@@ -16,7 +16,9 @@
  * the webhook when its URL is opened.
  *
  * Inputs (env vars; asked interactively when missing and a terminal is attached):
- *   BOT_TOKEN        required  token from @BotFather
+ *   PLATFORM_BOT_TOKEN  SaaS: the shop-builder bot    MASTER_KEY  SaaS: 32+ chars, never change it
+ *   PLATFORM_ADMIN_IDS  optional: platform admins (or /claim <MASTER_KEY> in the platform bot)
+ *   BOT_TOKEN        optional: your own shop's bot (at least one of the two tokens is required)
  *   WEBHOOK_SECRET   optional  generated when absent (the webhook is re-registered with it every run)
  *   ADMIN_CHAT_IDS   optional  overrides the value in wrangler.jsonc (sellers can also use /claim)
  *   WORKER_NAME      optional  deploy under another name (several sellers in one Cloudflare account)
@@ -87,8 +89,8 @@ async function main() {
     config.name = process.env.WORKER_NAME;
     config.d1_databases = config.d1_databases?.map((db) => ({ ...db, database_name: `${process.env.WORKER_NAME}-db` }));
   }
-  if (!process.env.BOT_TOKEN && !interactive) {
-    console.log('No BOT_TOKEN in a non-interactive build: deploying code only.');
+  if (!process.env.BOT_TOKEN && !process.env.PLATFORM_BOT_TOKEN && !interactive) {
+    console.log('No bot token in a non-interactive build: deploying code only.');
     const r = wrangler(['deploy'], { inherit: true });
     if (!r.ok) fail('wrangler deploy failed');
     console.log('\n✅ Deployed. Open the Worker URL once to finish setup (webhook + admin instructions).');
@@ -99,7 +101,7 @@ async function main() {
   if (!d1) fail('wrangler.jsonc has no d1_databases entry');
 
   /* ---------- 1. auth + inputs ---------- */
-  step(1, 'Cloudflare account & bot token');
+  step(1, 'Cloudflare account & bot tokens');
   if (!process.env.CLOUDFLARE_API_TOKEN) {
     if (/not authenticated/i.test(wrangler(['whoami']).out)) {
       if (!interactive) fail('Set CLOUDFLARE_API_TOKEN (see README) or run this in a terminal to log in.');
@@ -111,23 +113,53 @@ async function main() {
   if (!who.ok || /not authenticated/i.test(who.out)) fail(`Cloudflare authentication failed:\n${who.out}`);
   ok('logged in to Cloudflare');
 
-  let botToken = process.env.BOT_TOKEN?.trim();
-  if (!botToken && interactive) botToken = await ask('  Bot token from @BotFather: ');
-  if (!botToken) fail('BOT_TOKEN is required');
-  const me = await telegram(botToken, 'getMe');
-  if (!me.ok) fail(`Telegram rejected the bot token: ${me.description}`);
-  ok(`bot @${me.result.username}`);
+  // Two bots can run in one deployment; at least one is required:
+  //   the SaaS platform bot (PLATFORM_BOT_TOKEN + MASTER_KEY) and/or your own shop (BOT_TOKEN + WEBHOOK_SECRET).
+  const secrets = {};
+  const input = async (name, question) => process.env[name]?.trim() || (interactive ? await ask(question) : '');
 
-  const webhookSecret = process.env.WEBHOOK_SECRET?.trim() || randomBytes(32).toString('hex');
-  if (!/^[A-Za-z0-9_-]{16,256}$/.test(webhookSecret)) fail('WEBHOOK_SECRET must be 16+ characters of A-Z a-z 0-9 _ -');
-  if (!process.env.WEBHOOK_SECRET) {
-    // Never print secrets into CI logs; a generated one changes every run anyway.
-    if (interactive) warn(`Generated WEBHOOK_SECRET – keep it, it is the code for /claim: ${webhookSecret}`);
-    else warn('WEBHOOK_SECRET is not set: a new one is generated each deploy, so /claim needs ADMIN_CHAT_IDS or a fixed secret.');
+  const platformToken = await input('PLATFORM_BOT_TOKEN', '  Platform bot token (the shop-builder bot; Enter to skip): ');
+  if (platformToken) {
+    const me = await telegram(platformToken, 'getMe');
+    if (!me.ok) fail(`Telegram rejected PLATFORM_BOT_TOKEN: ${me.description}`);
+    ok(`platform bot @${me.result.username}`);
+    secrets.PLATFORM_BOT_TOKEN = platformToken;
+    let masterKey = process.env.MASTER_KEY?.trim();
+    if (!masterKey && interactive) {
+      masterKey = randomBytes(32).toString('hex');
+      warn(`Generated MASTER_KEY – store it safely and NEVER change it (sellers' tokens are encrypted with it):\n    ${masterKey}`);
+    }
+    if (masterKey) {
+      if (masterKey.length < 32) fail('MASTER_KEY must be at least 32 characters');
+      secrets.MASTER_KEY = masterKey;
+    } else {
+      // Secrets are additive: a MASTER_KEY uploaded by an earlier deploy stays in place.
+      warn('MASTER_KEY not provided – keeping the one already on the Worker (set it once, never change it).');
+    }
   }
-  const adminIds = process.env.ADMIN_CHAT_IDS?.trim() || config.vars?.ADMIN_CHAT_IDS;
-  if (adminIds) ok(`admins: ${adminIds}`);
-  else warn('ADMIN_CHAT_IDS is empty – send `/claim <WEBHOOK_SECRET>` to the bot to become admin.');
+
+  const botToken = await input('BOT_TOKEN', '  Your own shop bot token (Enter to skip): ');
+  if (botToken) {
+    const me = await telegram(botToken, 'getMe');
+    if (!me.ok) fail(`Telegram rejected BOT_TOKEN: ${me.description}`);
+    ok(`own shop bot @${me.result.username}`);
+    const webhookSecret = process.env.WEBHOOK_SECRET?.trim() || randomBytes(32).toString('hex');
+    if (!/^[A-Za-z0-9_-]{16,256}$/.test(webhookSecret)) fail('WEBHOOK_SECRET must be 16+ characters of A-Z a-z 0-9 _ -');
+    if (!process.env.WEBHOOK_SECRET) {
+      // Never print secrets into CI logs; a generated one changes every run anyway.
+      if (interactive) warn(`Generated WEBHOOK_SECRET – keep it, it is the /claim code of your shop: ${webhookSecret}`);
+      else warn('WEBHOOK_SECRET is not set: a new one is generated each deploy, so /claim needs ADMIN_CHAT_IDS or a fixed secret.');
+    }
+    Object.assign(secrets, { BOT_TOKEN: botToken, WEBHOOK_SECRET: webhookSecret });
+  }
+  if (!platformToken && !botToken) fail('Set PLATFORM_BOT_TOKEN (SaaS platform) and/or BOT_TOKEN (your own shop).');
+
+  const adminIds = process.env.ADMIN_CHAT_IDS?.trim() || config.vars?.ADMIN_CHAT_IDS || '';
+  const platformAdminIds = process.env.PLATFORM_ADMIN_IDS?.trim() || config.vars?.PLATFORM_ADMIN_IDS || '';
+  if (platformToken) {
+    if (platformAdminIds) ok(`platform admins: ${platformAdminIds}`);
+    else warn('PLATFORM_ADMIN_IDS is empty – send `/claim <MASTER_KEY>` to the platform bot to become its admin.');
+  }
 
   /* ---------- 2. D1 ---------- */
   step(2, `D1 database "${d1.database_name}"`);
@@ -162,7 +194,7 @@ async function main() {
   const deployConfig = {
     ...config,
     d1_databases: [{ ...d1, database_id: db.uuid }],
-    vars: { ...config.vars, ADMIN_CHAT_IDS: adminIds },
+    vars: { ...config.vars, ADMIN_CHAT_IDS: adminIds, PLATFORM_ADMIN_IDS: platformAdminIds },
   };
   delete deployConfig.$schema;
   if (!useR2) delete deployConfig.r2_buckets;
@@ -179,7 +211,7 @@ async function main() {
   const secretsFile = join(secretsDir, 'secrets.json');
   let deployOut;
   try {
-    writeFileSync(secretsFile, JSON.stringify({ BOT_TOKEN: botToken, WEBHOOK_SECRET: webhookSecret }), { mode: 0o600 });
+    writeFileSync(secretsFile, JSON.stringify(secrets), { mode: 0o600 });
     deployOut = wranglerOrDie(['deploy', '-c', GENERATED_CONFIG, '--secrets-file', secretsFile], 'wrangler deploy').out;
   } finally {
     rmSync(secretsDir, { recursive: true, force: true });
@@ -193,29 +225,18 @@ async function main() {
   }
   ok(url);
 
-  /* ---------- 6. webhook ---------- */
-  step(6, 'Telegram webhook');
-  const hook = await telegram(botToken, 'setWebhook', {
-    url: `${url}/webhook`,
-    secret_token: webhookSecret,
-    allowed_updates: ['message', 'callback_query'],
-  });
-  if (!hook.ok) fail(`setWebhook failed: ${hook.description}`);
-  ok(`${url}/webhook`);
-
-  // A brand-new workers.dev hostname can take a few seconds to resolve everywhere.
-  let healthy = false;
-  for (let i = 0; i < 10 && !healthy; i++) {
-    healthy = await fetch(url).then((r) => r.ok, () => false);
-    if (!healthy) await new Promise((r) => setTimeout(r, 3000));
+  /* ---------- 6. webhooks ---------- */
+  // Opening the Worker's status page connects every configured bot's webhook (src/setup.ts).
+  step(6, 'Telegram webhooks');
+  let status;
+  for (let i = 0; i < 10 && !status?.ok; i++) {
+    status = await fetch(url).then(async (r) => ({ ok: r.ok, body: await r.text() }), () => undefined);
+    if (!status?.ok) await new Promise((r) => setTimeout(r, 3000));
   }
-  if (healthy) ok('Worker responds');
-  else warn('Worker did not answer yet; new workers.dev hosts can take a minute. Telegram will retry.');
+  if (status?.ok) ok('bots connected');
+  else warn(`Setup is not complete yet – open ${url} in a browser to see what is missing.`);
 
-  const info = await telegram(botToken, 'getWebhookInfo');
-  if (info.result?.last_error_message) warn(`Telegram's last webhook error: ${info.result.last_error_message}`);
-
-  console.log(`\n✅ Done. Open https://t.me/${me.result.username} and send /start`);
+  console.log(`\n✅ Done. Status page: ${url}`);
 }
 
 main().catch((err) => fail(err?.stack ?? String(err)));

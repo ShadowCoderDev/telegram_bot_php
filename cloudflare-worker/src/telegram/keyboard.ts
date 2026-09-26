@@ -9,6 +9,10 @@ export const button = (text: string, data: string, style?: ButtonStyle): InlineK
   return style ? { text, callback_data: data, style } : { text, callback_data: data };
 };
 
+/** A button that opens a link (e.g. the platform bot for renewing). */
+export const urlButton = (text: string, url: string, style?: ButtonStyle): InlineKeyboardButton =>
+  style ? { text, url, style } : { text, url };
+
 export const inline = (...rows: InlineKeyboardButton[][]): InlineKeyboardMarkup => ({ inline_keyboard: rows });
 
 export const replyKeyboard = (rows: string[][]): ReplyKeyboardMarkup => ({

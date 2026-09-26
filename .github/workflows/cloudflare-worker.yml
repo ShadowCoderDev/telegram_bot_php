@@ -49,22 +49,26 @@ jobs:
       BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
       WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
       ADMIN_CHAT_IDS: ${{ vars.ADMIN_CHAT_IDS }}
+      PLATFORM_BOT_TOKEN: ${{ secrets.PLATFORM_BOT_TOKEN }}
+      MASTER_KEY: ${{ secrets.MASTER_KEY }}
+      PLATFORM_ADMIN_IDS: ${{ vars.PLATFORM_ADMIN_IDS }}
+      HAS_BOT: ${{ secrets.BOT_TOKEN != '' || secrets.PLATFORM_BOT_TOKEN != '' }}
       WORKER_NAME: ${{ vars.WORKER_NAME }}
     steps:
       - name: Skip until secrets are configured
-        if: env.CLOUDFLARE_API_TOKEN == '' || env.BOT_TOKEN == ''
+        if: env.CLOUDFLARE_API_TOKEN == '' || env.HAS_BOT != 'true'
         working-directory: .
         run: |
-          echo "::notice::${{ matrix.seller }} - add CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and BOT_TOKEN secrets to enable deploys (see cloudflare-worker/README.md)."
+          echo "::notice::${{ matrix.seller }} - add CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and PLATFORM_BOT_TOKEN + MASTER_KEY (and/or BOT_TOKEN) secrets to enable deploys (see cloudflare-worker/README.md)."
       - uses: actions/checkout@v4
-        if: env.CLOUDFLARE_API_TOKEN != '' && env.BOT_TOKEN != ''
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.HAS_BOT == 'true'
       - uses: actions/setup-node@v4
-        if: env.CLOUDFLARE_API_TOKEN != '' && env.BOT_TOKEN != ''
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.HAS_BOT == 'true'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: cloudflare-worker/package-lock.json
       - run: npm ci
-        if: env.CLOUDFLARE_API_TOKEN != '' && env.BOT_TOKEN != ''
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.HAS_BOT == 'true'
       - run: npm run deploy
-        if: env.CLOUDFLARE_API_TOKEN != '' && env.BOT_TOKEN != ''
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.HAS_BOT == 'true'

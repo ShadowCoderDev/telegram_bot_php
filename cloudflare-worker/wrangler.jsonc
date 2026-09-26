@@ -5,9 +5,10 @@
   "compatibility_date": "2026-09-01",
   "observability": { "enabled": true },
 
-  // Deploy with `npm run deploy` (scripts/deploy.mjs) or the "Deploy to Cloudflare" button.
-  // The Worker creates its own tables on first use and registers its Telegram webhook when its URL
-  // is opened, so nothing in this file needs editing. Secrets: BOT_TOKEN, WEBHOOK_SECRET.
+  // Deploy with `npm run deploy` (scripts/deploy.mjs). The Worker creates its own tables on first use
+  // and registers its Telegram webhooks when its URL is opened, so nothing here needs editing.
+  // Secrets – SaaS platform: PLATFORM_BOT_TOKEN, MASTER_KEY (32+ chars, never change it);
+  //           the owner's own shop (optional): BOT_TOKEN, WEBHOOK_SECRET.
   "vars": {
     // Optional: numeric chat ids of admins, comma separated. Sellers can instead send
     // `/claim <WEBHOOK_SECRET>` to their bot to become admin.
@@ -19,7 +20,10 @@
   "d1_databases": [{ "binding": "DB", "database_name": "shop", "migrations_dir": "migrations" }],
 
   // Migration files are bundled as text so the Worker can apply them itself (src/db/migrate.ts).
-  "rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }]
+  "rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }],
+
+  // Hourly: subscription expiry reminders to sellers (src/platform.ts → sendReminders).
+  "triggers": { "crons": ["0 * * * *"] }
 
   // Optional receipt archive in R2 (needs R2 enabled on the account, which asks for a payment method):
   // "r2_buckets": [{ "binding": "FILES", "bucket_name": "shop-files" }]
