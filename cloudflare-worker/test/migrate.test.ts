@@ -28,6 +28,15 @@ describe('runtime migrations', () => {
     ]);
   });
 
+  it('keeps a trigger body in one statement', () => {
+    const sql = 'CREATE TABLE a (x);\n-- note\nCREATE TRIGGER t AFTER INSERT ON a\nBEGIN\n  INSERT INTO b VALUES (1);\n  DELETE FROM c;\nEND;\nCREATE TABLE d (y);';
+    expect(splitSql(sql)).toEqual([
+      'CREATE TABLE a (x)',
+      '-- note\nCREATE TRIGGER t AFTER INSERT ON a\nBEGIN\n  INSERT INTO b VALUES (1);\n  DELETE FROM c;\nEND',
+      'CREATE TABLE d (y)',
+    ]);
+  });
+
   it('applies every migration file once, recording it where wrangler looks', async () => {
     const db = proxy.env.DB;
     await migrate(db);
@@ -35,7 +44,10 @@ describe('runtime migrations', () => {
     const names = (await db.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>()).results.map((r) => r.name);
     expect(names).toEqual(readdirSync('migrations').filter((f) => f.endsWith('.sql')).sort());
     expect(await db.prepare("SELECT setting_value FROM settings WHERE setting_key = 'bank_info'").first()).toBeTruthy();
-    expect(await db.prepare('SELECT count(*) AS n FROM processed_updates').first()).toEqual({ n: 0 });
+    expect(await db.prepare('SELECT count(*) AS n FROM bot_usage').first()).toEqual({ n: 0 });
+    // Composite-key tables are stored without a hidden rowid (1 written row per insert).
+    const sessions = await db.prepare("SELECT sql FROM sqlite_master WHERE name = 'sessions'").first<{ sql: string }>();
+    expect(sessions!.sql).toMatch(/WITHOUT ROWID/);
   });
 
   it('leaves nothing for wrangler to apply afterwards', async () => {
@@ -67,12 +79,14 @@ describe('multi-tenant migration over existing data', () => {
       await migrate(db); // → multi-tenant
 
       const count = async (sql: string) => ((await db.prepare(sql).first<{ n: number }>())!).n;
-      for (const table of ['users', 'categories', 'products', 'orders', 'order_items', 'order_details', 'sessions', 'dialogs', 'processed_updates']) {
+      for (const table of ['users', 'categories', 'products', 'orders', 'order_items', 'order_details', 'sessions', 'dialogs']) {
         expect(await count(`SELECT count(*) AS n FROM ${table} WHERE shop_id = 1`), table).toBe(1);
       }
       expect(await db.prepare("SELECT setting_value FROM settings WHERE shop_id = 1 AND setting_key = 'shop_name'").first()).toEqual({ setting_value: 'IELTS' });
       expect(await db.prepare('SELECT plan FROM shops WHERE id = 1').first()).toEqual({ plan: 'owner' });
       expect((await db.prepare('PRAGMA foreign_key_check').all()).results).toEqual([]);
+      // The customer list's order comes from the customer's latest placed order.
+      expect(await db.prepare('SELECT u.last_activity = o.time AS same FROM users u JOIN orders o ON o.user_id = u.id WHERE u.id = 1').first()).toEqual({ same: 1 });
       // Old ids survive, so existing orders still point at their customer.
       expect(await db.prepare('SELECT u.name FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = 1').first()).toEqual({ name: 'Ali' });
       // The same Telegram user can now be a customer of another shop too.

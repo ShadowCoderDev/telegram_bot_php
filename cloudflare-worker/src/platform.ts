@@ -2,10 +2,14 @@
  * The platform bot: sellers create and renew shops here; the platform owner reviews payments and
  * manages every shop. Served at POST /platform. Each shop's own bot is served at /webhook/<id>.
  */
+import { CAPACITY_KEYS, CAPACITY_RANGES, capacityReport, capacitySettings, dailyCap, forgetCapacitySettings, quotaUsage, type CapacityKey } from './capacity';
+import { ERROR_TEXT, SLOW_DOWN_TEXT } from './bot';
 import { decryptToken, encryptToken, randomSecret, sameSecret } from './crypto';
 import { ShopRepository, SubscriptionPaymentRepository, type ShopRow } from './db/platform';
-import { PLATFORM_SETTING_DEFAULTS, PLATFORM_SETTING_KEYS, SessionRepository, SettingsRepository, UpdateLogRepository, type PlatformSettingKey } from './db/repositories';
+import { PLATFORM_SETTING_DEFAULTS, PLATFORM_SETTING_KEYS, SessionRepository, SettingsRepository, type PlatformSettingKey } from './db/repositories';
+import { UNCAPPED, UsageRepository, addDropped } from './db/usage';
 import { parseAdminIds } from './deps';
+import { flooding, onceEvery } from './flood';
 import type { Env } from './env';
 import { LIMITS, charCount } from './limits';
 import { DAY, MONTH, RENEW_OPTIONS, dueReminder } from './services/subscription';
@@ -15,10 +19,11 @@ import { TelegramApiError, TelegramClient } from './telegram/TelegramClient';
 import type { Update } from './telegram/types';
 import { shopClaimCode } from './tenancy';
 import { formatPersianDate, parseAmount, tehranDayAndMonthStart } from './utils/persian';
-import { CANCEL_HINT, heading, sections } from './views/common';
+import { CANCEL_HINT, heading, num, sections } from './views/common';
 import * as pv from './views/platform';
 
 const { PCB } = pv;
+const PLATFORM_FULL_TEXT = '⏳ ظرفیت امروز ربات تکمیل شده است.\nلطفاً بعد از ساعت ۳:۳۰ بامداد دوباره سر بزنید. 🙏';
 const now = () => Math.floor(Date.now() / 1000);
 
 /** How many shops one seller may own. */
@@ -37,7 +42,8 @@ export function createPlatformDeps(env: Env, origin: string) {
     payments: new SubscriptionPaymentRepository(env.DB),
     settings,
     sessions: new SessionRepository(env.DB, 0),
-    updateLog: new UpdateLogRepository(env.DB, 0),
+    /** Redelivery protection and usage counters of the platform bot itself (shop 0, never capped). */
+    usage: new UsageRepository(env.DB, 0),
     masterKey: env.MASTER_KEY ?? '',
     envAdminIds,
     adminIds: envAdminIds,
@@ -53,6 +59,11 @@ async function price(d: PlatformDeps): Promise<number> {
 }
 async function trialDays(d: PlatformDeps): Promise<number> {
   return Math.max(0, Math.min(30, Number(await d.settings.get('trial_days')) || 0));
+}
+/** A shop's usage today and its daily cap. */
+async function shopUsage(d: PlatformDeps, shop: ShopRow): Promise<pv.ShopUsage> {
+  const [today, c] = await Promise.all([new UsageRepository(d.env.DB, shop.id).today(now()), capacitySettings(d.settings)]);
+  return { today, cap: dailyCap(shop, c) };
 }
 
 /** Loads a shop only if `chatId` owns it (or is a platform admin); forged buttons get nothing. */
@@ -123,20 +134,42 @@ export function createPlatformBot(d: PlatformDeps) {
   const seller = registerSellerRoutes(new Router(), d);
   const admin = registerAdminRoutes(new Router(), d);
 
-  return async function handleUpdate(update: Update): Promise<void> {
-    d.adminIds = [...new Set([...d.envAdminIds, ...(await d.settings.claimedAdmins())])];
-    const ctx = new BotContext(update, d.tg, d.adminIds);
-    if (!ctx.chatId || ctx.chatType !== 'private') return;
-    if (!(await d.updateLog.firstTime(update.update_id, ctx.chatId))) return;
-    if (update.update_id % 200 === 0) await d.updateLog.prune();
+  async function handleUpdate(update: Update, ctx: BotContext): Promise<void> {
     const cb = update.callback_query;
-    if (!ctx.isAdmin && (await d.updateLog.recentCount(ctx.chatId, 10)) > d.floodLimit) {
-      if (cb) await d.tg.answerCallbackQuery(cb.id, '⏳ لطفاً کمی آهسته‌تر').catch(() => {});
+    if (!ctx.isAdmin && flooding(`0:${ctx.chatId}`, d.floodLimit)) {
+      addDropped(0);
+      if (cb) await d.tg.answerCallbackQuery(cb.id, SLOW_DOWN_TEXT).catch(() => {});
+      return;
+    }
+    // Redeliveries are skipped. Sellers share a daily cap on this bot, so nobody can spend the
+    // platform's quota through it; platform admins are never capped.
+    const limit = ctx.isAdmin ? UNCAPPED : (await capacitySettings(d.settings)).platformCap;
+    const tracked = await d.usage.track(update.update_id, now(), { updates: limit, written: UNCAPPED, read: UNCAPPED });
+    if (tracked.status === 'duplicate') return;
+    if (tracked.status === 'capped') {
+      if (cb) await d.tg.answerCallbackQuery(cb.id, PLATFORM_FULL_TEXT, true).catch(() => {});
+      else if (onceEvery(`full:0:${ctx.chatId}`, 600)) await d.tg.sendMessage(ctx.chatId, PLATFORM_FULL_TEXT).catch(() => {});
       return;
     }
     const answered = cb ? d.tg.answerCallbackQuery(cb.id).catch(() => {}) : Promise.resolve();
-    if (!(ctx.isAdmin && (await admin.dispatch(ctx)))) await seller.dispatch(ctx);
-    await answered;
+    try {
+      if (!(ctx.isAdmin && (await admin.dispatch(ctx)))) await seller.dispatch(ctx);
+    } finally {
+      await answered;
+    }
+  }
+
+  return async function (update: Update): Promise<void> {
+    d.adminIds = [...new Set([...d.envAdminIds, ...(await d.settings.claimedAdmins())])];
+    const ctx = new BotContext(update, d.tg, d.adminIds);
+    if (!ctx.chatId || ctx.chatType !== 'private') return;
+    try {
+      await handleUpdate(update, ctx);
+    } catch (err) {
+      // A failed database query (or a bug) must not leave the seller waiting for an answer.
+      if (!(err instanceof TelegramApiError) && onceEvery(`error:0:${ctx.chatId}`, 60)) await d.tg.sendMessage(ctx.chatId, ERROR_TEXT).catch(() => {});
+      throw err;
+    }
   };
 }
 
@@ -147,7 +180,7 @@ function registerSellerRoutes(router: Router, d: PlatformDeps): Router {
     const shop = await ownedShop(d, ctx, id);
     if (!shop) return shops(ctx);
     const pending = (await d.payments.pendingCountForShop(shop.id)) > 0;
-    await ctx.render(pv.shopPage(shop, now(), await shopClaimCode(d.masterKey, shop.id), pending));
+    await ctx.render(pv.shopPage(shop, now(), await shopClaimCode(d.masterKey, shop.id), pending, await shopUsage(d, shop)));
   };
   const renew = async (ctx: BotContext, id: number) => {
     const shop = await ownedShop(d, ctx, id);
@@ -176,7 +209,10 @@ function registerSellerRoutes(router: Router, d: PlatformDeps): Router {
     .callback(PCB.home, home)
     .callback('noop', async () => {})
     .callback(PCB.shops, shops)
-    .callback(PCB.limits, async (ctx) => ctx.render(pv.limitsView(await price(d), await trialDays(d))))
+    .callback(PCB.limits, async (ctx) => {
+      const c = await capacitySettings(d.settings);
+      await ctx.render(pv.limitsView(await price(d), await trialDays(d), { trial: c.trialCap, paid: c.paidCap }));
+    })
     .callback(PCB.support, async (ctx) => ctx.render(pv.supportView(await d.settings.get('support'))))
     .callback(PCB.newShop, async (ctx) => {
       if (!d.masterKey) return ctx.reply({ text: '⚠️ پلتفرم هنوز کامل راه‌اندازی نشده (MASTER_KEY).' });
@@ -301,8 +337,10 @@ function registerAdminRoutes(router: Router, d: PlatformDeps): Router {
   };
   const shopPage = async (ctx: BotContext, id: number) => {
     const shop = await d.shops.find(id);
-    await (shop ? ctx.render(pv.adminShopPage(shop, now(), await d.payments.forShop(id))) : shopsPage(ctx, 0));
+    await (shop ? ctx.render(pv.adminShopPage(shop, now(), await d.payments.forShop(id), await shopUsage(d, shop))) : shopsPage(ctx, 0));
   };
+  const capacity = async (ctx: BotContext) => ctx.render(pv.capacityView(await capacityReport(d.env.DB, await capacitySettings(d.settings), now())));
+  const capacitySettingsPage = async (ctx: BotContext) => ctx.render(pv.capacitySettingsView(await d.settings.getMany(CAPACITY_KEYS)));
   const notifyOwner = (shop: ShopRow, text: string) =>
     shop.owner_chat_id ? d.tg.sendMessage(shop.owner_chat_id, text).catch((err) => console.error('notify seller', err)) : undefined;
 
@@ -350,6 +388,20 @@ function registerAdminRoutes(router: Router, d: PlatformDeps): Router {
       }
       await shopPage(ctx, Number(id));
     })
+    .callback(/^pa:shop:cap2:(\d+)$/, async (ctx, [id]) => {
+      const shop = await d.shops.find(Number(id));
+      if (shop && shop.plan !== 'owner') {
+        const cap = dailyCap(shop, await capacitySettings(d.settings));
+        await d.shops.setDailyLimit(shop.id, Math.min(cap * 2, CAPACITY_RANGES.paid_daily_limit[1]));
+      }
+      await shopPage(ctx, Number(id));
+    })
+    .callback(/^pa:shop:capdef:(\d+)$/, async (ctx, [id]) => {
+      await d.shops.setDailyLimit(Number(id), null);
+      await shopPage(ctx, Number(id));
+    })
+    .callback(PCB.admin.capacity, capacity)
+    .callback(PCB.admin.capacitySettings, capacitySettingsPage)
     .callback(/^pa:shop:susp:(\d+)$/, async (ctx, [id]) => {
       const shop = await d.shops.find(Number(id));
       if (shop && shop.plan !== 'owner') await d.shops.setStatus(shop.id, shop.status === 'suspended' ? 'active' : 'suspended');
@@ -380,17 +432,27 @@ function registerAdminRoutes(router: Router, d: PlatformDeps): Router {
         const n = parseAmount(text);
         if (n === null || n > 30) return ctx.reply({ text: sections('⚠️ عددی بین ۰ تا ۳۰ بفرستید.', CANCEL_HINT) });
         value = String(n);
+      } else if (isCapacityKey(s.data.key)) {
+        const n = parseAmount(text);
+        const [min, max] = CAPACITY_RANGES[s.data.key];
+        if (n === null || n < min || n > max) return ctx.reply({ text: sections(`⚠️ عددی بین ${num(min)} و ${num(max)} بفرستید.`, CANCEL_HINT) });
+        value = String(n);
       } else if (!text || charCount(text) > LIMITS.setting) {
         return ctx.reply({ text: sections('⚠️ یک متن کوتاه بفرستید.', CANCEL_HINT) });
       }
       await d.settings.set(s.data.key, value);
       await d.sessions.clear(ctx.chatId);
       await ctx.reply({ text: '✅ ذخیره شد.' });
+      if (isCapacityKey(s.data.key)) {
+        forgetCapacitySettings();
+        return ctx.reply(pv.capacitySettingsView(await d.settings.getMany(CAPACITY_KEYS)));
+      }
       await ctx.reply(pv.settingsView(await d.settings.getMany(PLATFORM_SETTING_KEYS)));
     });
 }
 
 const pvDate = (unix: number) => formatPersianDate(unix).split(' - ')[0];
+const isCapacityKey = (key: string): key is CapacityKey => (CAPACITY_KEYS as readonly string[]).includes(key);
 
 /* ------------------------------------------------------------------ */
 /* Cron: expiry reminders                                               */
@@ -413,4 +475,26 @@ export async function sendReminders(d: PlatformDeps, batch = 40): Promise<number
     sent++;
   }
   return sent;
+}
+
+/* ------------------------------------------------------------------ */
+/* Cron: capacity alarm                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Hourly: warns the platform admins when today's use of a Cloudflare quota passes the alarm
+ * threshold, and again when it becomes critical – each at most once per day.
+ * Returns the level that was announced (0 = nothing sent).
+ */
+export async function checkCapacity(d: PlatformDeps): Promise<number> {
+  if (!d.env.PLATFORM_BOT_TOKEN) return 0;
+  const report = await quotaUsage(d.env.DB, await capacitySettings(d.settings), now());
+  if (report.level === 0) return 0;
+  const [day, level] = ((await d.settings.raw('capacity_alert')) ?? '0:0').split(':').map(Number);
+  if (day === report.day && (level ?? 0) >= report.level) return 0;
+  await d.settings.set('capacity_alert', `${report.day}:${report.level}`);
+  const view = pv.capacityAlarm(report);
+  const admins = new Set([...d.envAdminIds, ...(await d.settings.claimedAdmins())]);
+  await Promise.all([...admins].map((id) => d.tg.sendMessage(id, view.text, view.keyboard).catch((err) => console.error('capacity alarm', err))));
+  return report.level;
 }

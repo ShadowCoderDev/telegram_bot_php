@@ -1,12 +1,14 @@
+import { ADMIN_HEADROOM, CAPACITY_KEYS, CRITICAL_SHARE, SHOP_MAX_SHARE, type CapacityKey, type CapacityReport, type QuotaUsage, type Share } from '../capacity';
 import type { ShopRow, SubscriptionPayment } from '../db/platform';
 import type { PlatformSettingKey } from '../db/repositories';
+import { UNCAPPED, type DayUsage } from '../db/usage';
 import { PLAN_LIMITS } from '../limits';
 import { RENEW_OPTIONS, daysLeft, shopAccess, type Access } from '../services/subscription';
 import { backRow, button, inline, urlButton } from '../telegram/keyboard';
 import type { View } from '../telegram/types';
 import { escapeHtml as e } from '../utils/format';
 import { formatPersianDate } from '../utils/persian';
-import { CANCEL_HINT, fa, heading, hint, quote, sections, toman } from './common';
+import { CANCEL_HINT, fa, heading, hint, num, quote, sections, toman } from './common';
 
 /** Callback data of the platform bot ("p:" for sellers, "pa:" for the platform owner). */
 export const PCB = {
@@ -33,6 +35,10 @@ export const PCB = {
     shop: (id: number) => `pa:shop:${id}`,
     addDays: (id: number) => `pa:shop:add30:${id}`,
     toggleSuspend: (id: number) => `pa:shop:susp:${id}`,
+    doubleCap: (id: number) => `pa:shop:cap2:${id}`,
+    defaultCap: (id: number) => `pa:shop:capdef:${id}`,
+    capacity: 'pa:cap',
+    capacitySettings: 'pa:capset',
     stats: 'pa:stats',
     settings: 'pa:settings',
     editSetting: (key: PlatformSettingKey) => `pa:set:${key}`,
@@ -57,6 +63,18 @@ const statusLine = (s: ShopRow, now: number): string => {
   if (access === 'ok') return `${s.plan === 'trial' ? '🎁 آزمایشی' : '🟢 فعال'} · <b>${fa(left)}</b> روز مانده ${hint(`(تا ${date(s.paid_until)})`)}`;
   return ACCESS_LABEL[access];
 };
+
+/** Today's usage of a shop's bot against its daily cap. */
+export interface ShopUsage {
+  today: DayUsage;
+  cap: number;
+}
+
+const usageLine = (u: ShopUsage): string =>
+  u.cap >= UNCAPPED
+    ? `📶 پیام‌های امروز: <b>${num(u.today.updates)}</b> ${hint('(بدون سقف)')}`
+    : `📶 مصرف امروز: <b>${num(Math.min(u.today.updates, u.cap))}</b> از ${num(u.cap)} پیام ${hint(`(${fa(Math.round((100 * u.today.updates) / u.cap))}٪)`)}` +
+      (u.today.updates >= u.cap ? '\n⛔ ظرفیت امروز تکمیل شده؛ از ۳:۳۰ بامداد دوباره باز می‌شود.' : '');
 
 /* ---------- sellers ---------- */
 
@@ -115,10 +133,10 @@ export const myShops = (shops: ShopRow[], now: number): View =>
         keyboard: inline([button('➕ ساخت فروشگاه', PCB.newShop, 'success')], toHome()),
       };
 
-export const shopPage = (s: ShopRow, now: number, claimCode: string, pendingPayment: boolean): View => ({
+export const shopPage = (s: ShopRow, now: number, claimCode: string, pendingPayment: boolean, usage: ShopUsage): View => ({
   text: sections(
     `🤖 <b>${botLink(s)}</b>`,
-    quote(`📌 ${statusLine(s, now)}\n🗓 ساخته‌شده: ${date(s.created_at)}`),
+    quote(`📌 ${statusLine(s, now)}\n${usageLine(usage)}\n🗓 ساخته‌شده: ${date(s.created_at)}`),
     pendingPayment ? '⏳ یک پرداخت شما در حال بررسی است.' : '',
     `👮 برای اضافه کردن ادمین دیگر، او باید در ربات فروشگاه این را بفرستد:\n<code>/claim ${claimCode}</code>\n${hint('این کد را فقط به افراد مورد اعتماد بدهید.')}`,
   ),
@@ -153,13 +171,14 @@ export const paymentReceived = (): View => ({
   keyboard: inline(toHome()),
 });
 
-export const limitsView = (price: number, trialDays: number): View => ({
+export const limitsView = (price: number, trialDays: number, caps: { trial: number; paid: number }): View => ({
   text: sections(
     heading('📋', 'امکانات و محدودیت‌ها'),
     `💰 <b>قیمت:</b> ${toman(price)} در ماه · 🎁 ${fa(trialDays)} روز رایگان`,
     `<b>در هر فروشگاه:</b>\n` +
       quote(
-        `📦 تا <b>${fa(PLAN_LIMITS.products)}</b> محصول\n` +
+        `📶 تا <b>${num(caps.paid)}</b> پیام و کلیک مشتری در روز ${hint(`(دوره‌ی آزمایشی: ${num(caps.trial)})`)}\n` +
+          `📦 تا <b>${fa(PLAN_LIMITS.products)}</b> محصول\n` +
           `📂 تا <b>${fa(PLAN_LIMITS.categories)}</b> دسته‌بندی\n` +
           `❓ تا <b>${fa(PLAN_LIMITS.faqs)}</b> سوال متداول\n` +
           `👮 مالک + تا <b>${fa(PLAN_LIMITS.extraAdmins)}</b> ادمین دیگر\n` +
@@ -206,7 +225,8 @@ export const adminRoot = (pendingPayments: number, stats: { total: number; paid:
   keyboard: inline(
     [button(pendingPayments ? `💳 پرداخت‌ها (🟡 ${fa(pendingPayments)})` : '💳 پرداخت‌ها', PCB.admin.payments, 'primary')],
     [button('🏪 فروشگاه‌ها', PCB.admin.shops), button('📊 درآمد', PCB.admin.stats)],
-    [button('⚙️ تنظیمات', PCB.admin.settings), button('👀 منوی فروشنده', PCB.home)],
+    [button('📈 ظرفیت', PCB.admin.capacity), button('⚙️ تنظیمات', PCB.admin.settings)],
+    [button('👀 منوی فروشنده', PCB.home)],
   ),
 });
 
@@ -253,10 +273,15 @@ export const shopsList = (shops: ShopRow[], page: number, pages: number, now: nu
   ),
 });
 
-export const adminShopPage = (s: ShopRow, now: number, payments: SubscriptionPayment[]): View => ({
+export const adminShopPage = (s: ShopRow, now: number, payments: SubscriptionPayment[], usage: ShopUsage): View => ({
   text: sections(
     `🤖 <b>${botLink(s)}</b>  ${hint(`#${s.id}`)}`,
     quote(`📌 ${statusLine(s, now)}\n👤 مالک: <code>${s.owner_chat_id}</code>\n🗓 ساخته‌شده: ${date(s.created_at)}`),
+    quote(
+      `${usageLine(usage)}\n` +
+        (s.plan === 'owner' ? '' : `🎚 سقف: ${s.daily_limit ? '<b>اختصاصی</b>' : 'پیش‌فرض پلن'}\n`) +
+        `✍️ نوشتن امروز: ${num(usage.today.rows_written)} · 🚫 ردشده: ${num(usage.today.dropped)}`,
+    ),
     payments.length
       ? `💳 <b>پرداخت‌ها</b>\n${quote(payments.map((p) => `${p.status === 'approved' ? '✅' : p.status === 'pending' ? '🟡' : '❌'} ${date(p.created_at)} · ${fa(p.months)} ماه · ${toman(p.amount)}`).join('\n'))}`
       : '',
@@ -266,6 +291,7 @@ export const adminShopPage = (s: ShopRow, now: number, payments: SubscriptionPay
       ? []
       : [
           [button('➕ ۳۰ روز رایگان', PCB.admin.addDays(s.id), 'success')],
+          [button('⬆️ سقف روزانه ×۲', PCB.admin.doubleCap(s.id)), ...(s.daily_limit ? [button('↩️ سقف پیش‌فرض', PCB.admin.defaultCap(s.id))] : [])],
           [s.status === 'suspended' ? button('▶️ فعال‌سازی', PCB.admin.toggleSuspend(s.id), 'success') : button('⛔ توقف فروشگاه', PCB.admin.toggleSuspend(s.id), 'danger')],
         ]),
     backRow(PCB.admin.shops, '🔙 فروشگاه‌ها'),
@@ -288,6 +314,14 @@ export const PLATFORM_SETTING_LABELS: Record<PlatformSettingKey, { button: strin
   trial_days: { button: '🎁 روزهای آزمایشی', prompt: 'تعداد <b>روزهای رایگان</b> فروشگاه جدید را بفرستید (۰ تا ۳۰):' },
   bank_info: { button: '🏦 اطلاعات کارت', prompt: 'اطلاعات <b>کارت</b> برای دریافت اشتراک را بفرستید:' },
   support: { button: '🗣 پشتیبانی', prompt: 'آیدی یا متن <b>پشتیبانی</b> پلتفرم را بفرستید:' },
+  trial_daily_limit: { button: '🎁 سقف آزمایشی', prompt: 'سقف <b>پیام روزانه</b>ی هر فروشگاه آزمایشی را بفرستید (عدد):' },
+  paid_daily_limit: { button: '💳 سقف با اشتراک', prompt: 'سقف <b>پیام روزانه</b>ی هر فروشگاه با اشتراک را بفرستید (عدد):' },
+  platform_daily_limit: { button: '🏗 سقف ربات پلتفرم', prompt: 'سقف <b>پیام روزانه</b>ی فروشنده‌ها در ربات پلتفرم را بفرستید (مدیرها سقف ندارند):' },
+  alert_percent: { button: '🔔 درصد هشدار', prompt: 'وقتی مصرف روزانه به چند <b>درصد</b> سهمیه رسید هشدار بگیرید؟ (۱۰ تا ۸۵)' },
+  quota_requests: { button: '⚡️ سهمیه درخواست', prompt: 'سهمیه‌ی <b>درخواست روزانه</b>ی Cloudflare را بفرستید (پلن رایگان: 100000):' },
+  quota_writes: { button: '✍️ سهمیه نوشتن', prompt: 'سهمیه‌ی <b>نوشتن روزانه</b> در D1 را بفرستید (پلن رایگان: 100000):' },
+  quota_reads: { button: '📖 سهمیه خواندن', prompt: 'سهمیه‌ی <b>خواندن روزانه</b> از D1 را بفرستید (پلن رایگان: 5000000):' },
+  quota_storage_mb: { button: '💾 حجم دیتابیس', prompt: 'حداکثر <b>حجم دیتابیس</b> را به مگابایت بفرستید (پلن رایگان: 500، پلن پولی: 10000):' },
 };
 
 export const settingsView = (values: Record<PlatformSettingKey, string>): View => ({
@@ -302,4 +336,114 @@ export const settingsView = (values: Record<PlatformSettingKey, string>): View =
     [button(PLATFORM_SETTING_LABELS.bank_info.button, PCB.admin.editSetting('bank_info')), button(PLATFORM_SETTING_LABELS.support.button, PCB.admin.editSetting('support'))],
     backRow(PCB.admin.root, '🔙 پنل'),
   ),
+});
+
+/* ---------- capacity ---------- */
+
+const bar = (share: number): string => {
+  const filled = Math.max(0, Math.min(10, Math.round(share * 10)));
+  return '▰'.repeat(filled) + '▱'.repeat(10 - filled);
+};
+const pct = (share: number): string => `${fa(Math.round(share * 100))}٪`;
+const dayDate = (utcDay: number) => date(utcDay * 86_400 + 43_200);
+const shareIcon = (share: number, alertShare: number) => (share >= CRITICAL_SHARE ? '🔴' : share >= alertShare ? '🟠' : '🟢');
+const quotaLine = (icon: string, label: string, s: Share, alertShare: number): string =>
+  `${icon} ${label}: <b>${num(s.used)}</b> از ${num(s.quota)}\n${bar(s.share)} ${shareIcon(s.share, alertShare)} ${pct(s.share)}`;
+const mb = (bytes: number) => `${fa((bytes / 1024 / 1024).toFixed(bytes < 100 * 1024 * 1024 ? 1 : 0))} MB`;
+const storageLine = (s: Share, alertShare: number) => `💾 حجم دیتابیس: <b>${mb(s.used)}</b> از ${mb(s.quota)}\n${bar(s.share)} ${shareIcon(s.share, alertShare)} ${pct(s.share)}`;
+const usageName = (shopId: number, username: string | null) => (shopId === 0 ? 'ربات پلتفرم' : username ? `@${e(username)}` : `#${shopId}`);
+
+const LEVEL_TEXT = (r: CapacityReport): string =>
+  r.level === 0
+    ? `🟢 <b>امن.</b> تا حد هشدار (${pct(r.alertShare)}) امروز حدود <b>${num(r.updatesLeft)}</b> پیام دیگر جا هست.`
+    : r.level === 1
+      ? `🟠 <b>مصرف امروز از حد هشدار (${pct(r.alertShare)}) گذشته.</b> Workers Paid را فعال کنید یا سقف فروشگاه‌های پرمصرف را کم کنید.`
+      : '🔴 <b>نزدیک سقف Cloudflare.</b> اگر سهمیه تمام شود، همه‌ی فروشگاه‌ها تا ۳:۳۰ بامداد از کار می‌افتند. همین حالا Workers Paid را فعال کنید.';
+
+/** The platform owner's capacity page: today's use of the Cloudflare quotas and what's left. */
+export const capacityView = (r: CapacityReport): View => ({
+  text: sections(
+    heading('📈', 'ظرفیت پلتفرم'),
+    hint('امروز، از ساعت ۳:۳۰ بامداد (۰۰:۰۰ UTC) که سهمیه‌های Cloudflare صفر می‌شوند'),
+    quote(
+      [
+        quotaLine('⚡️', 'درخواست', r.requests, r.alertShare),
+        quotaLine('✍️', 'نوشتن در دیتابیس', r.writes, r.alertShare),
+        quotaLine('📖', 'خواندن از دیتابیس', r.reads, r.alertShare),
+        storageLine(r.storage, r.alertShare),
+      ].join('\n\n'),
+    ),
+    LEVEL_TEXT(r),
+    `🧮 <b>هزینه‌ی هر پیام</b> ${hint(r.perUpdate.measured ? '(اندازه‌گیری‌شده)' : '(تخمین؛ هنوز ترافیک کافی نیست)')}\n` +
+      quote(`✍️ ${fa(r.perUpdate.writes.toFixed(1))} نوشتن · 📖 ${fa(Math.round(r.perUpdate.reads))} خواندن`),
+    r.growth &&
+      `🏪 <b>جا برای فروشگاه جدید</b>\n` +
+        quote(
+          `هر فروشگاه در شلوغ‌ترین روز اخیر: ${num(r.growth.perShopRequests)} درخواست · ${num(r.growth.perShopWrites)} نوشتن\n` +
+            `➕ تا حد هشدار حدود <b>${num(r.growth.moreShops)}</b> فروشگاه مثل این‌ها دیگر جا دارید.`,
+        ),
+    r.worstCase.shops > 0 &&
+      `🛡 <b>بدترین حالت</b>\n` +
+        quote(
+          `اگر هر ${fa(r.worstCase.shops)} فروشگاه باز هم‌زمان به سقف روزانه‌شان برسند: ${num(r.worstCase.updates)} پیام ≈ <b>${pct(r.worstCase.share)}</b> سهمیه.\n` +
+            (r.worstCase.share <= r.alertShare
+              ? '✅ حتی در این حالت هم از سهمیه رد نمی‌شوید.'
+              : '⚠️ فقط اگر بیشتر فروشگاه‌ها هم‌زمان پرمصرف شوند از حد هشدار رد می‌شوید؛ هشدار خودکار ساعتی بررسی می‌کند.'),
+        ),
+    r.top.length > 0 &&
+      `🔥 <b>پرمصرف‌های امروز</b>\n` +
+        quote(r.top.map((t, i) => `${fa(i + 1)}. ${usageName(t.shop_id, t.bot_username)} · ${num(t.updates)} پیام · ${num(t.rows_written)} نوشتن`).join('\n')),
+    r.history.length > 0 &&
+      `🗓 <b>روزهای اخیر</b>\n` +
+        quote(r.history.map((h) => `${dayDate(h.day)} · ${num(h.updates)} پیام · ${num(h.rows_written)} نوشتن ${hint(`(${pct(h.rows_written / r.writes.quota)})`)}`).join('\n')),
+    hint('عدد دقیق Cloudflare: داشبورد ← Workers & Pages و Storage & Databases ← D1 ← Metrics.'),
+  ),
+  keyboard: inline(
+    [button('🔄 به‌روزرسانی', PCB.admin.capacity), button('⚙️ سقف‌ها و سهمیه‌ها', PCB.admin.capacitySettings)],
+    backRow(PCB.admin.root, '🔙 پنل'),
+  ),
+});
+
+export const capacitySettingsView = (v: Record<CapacityKey, string>): View => ({
+  text: sections(
+    heading('⚙️', 'سقف‌ها و سهمیه‌ها'),
+    `🎚 <b>سقف پیام روزانه</b>\n` +
+      quote(
+        `🎁 فروشگاه آزمایشی: <b>${num(Number(v.trial_daily_limit))}</b>\n💳 فروشگاه با اشتراک: <b>${num(Number(v.paid_daily_limit))}</b>\n` +
+          `🏗 فروشنده‌ها در ربات پلتفرم: <b>${num(Number(v.platform_daily_limit))}</b>`,
+      ),
+    hint(`ادمین‌های هر فروشگاه تا ${fa(ADMIN_HEADROOM)} برابر سقف کار می‌کنند، و هیچ فروشگاهی بیش از ${fa(Math.round(SHOP_MAX_SHARE * 100))}٪ سهمیه‌ی روزانه‌ی دیتابیس را مصرف نمی‌کند.`),
+    `☁️ <b>سهمیه‌ی روزانه‌ی Cloudflare</b> ${hint('(هشدار در ' + fa(v.alert_percent) + '٪)')}\n` +
+      quote(
+        `⚡️ درخواست: <b>${num(Number(v.quota_requests))}</b>\n✍️ نوشتن: <b>${num(Number(v.quota_writes))}</b>\n📖 خواندن: <b>${num(Number(v.quota_reads))}</b>\n` +
+          `💾 حجم دیتابیس: <b>${num(Number(v.quota_storage_mb))}</b> MB`,
+      ),
+    hint('پیش‌فرض‌ها سقف‌های پلن رایگان است. با Workers Paid (ماهی ۵ دلار) سهمیه ماهانه می‌شود: مثلاً درخواست ۳۳۰٬۰۰۰، نوشتن ۱٬۶۰۰٬۰۰۰ در روز و حجم ۱۰٬۰۰۰ MB بگذارید.'),
+  ),
+  keyboard: inline(
+    ...[0, 2, 4, 6].map((i) => CAPACITY_KEYS.slice(i, i + 2).map((k) => button(PLATFORM_SETTING_LABELS[k].button, PCB.admin.editSetting(k)))),
+    backRow(PCB.admin.capacity, '🔙 ظرفیت'),
+  ),
+});
+
+/** Sent by the hourly check when a quota passes the alarm threshold (once per level per day). */
+export const capacityAlarm = (r: QuotaUsage): View => ({
+  text: sections(
+    heading(r.level === 2 ? '🔴' : '🟠', r.level === 2 ? 'ظرفیت پلتفرم نزدیک سقف Cloudflare است' : 'هشدار ظرفیت پلتفرم'),
+    quote(
+      [
+        quotaLine('⚡️', 'درخواست', r.requests, r.alertShare),
+        quotaLine('✍️', 'نوشتن', r.writes, r.alertShare),
+        quotaLine('📖', 'خواندن', r.reads, r.alertShare),
+        storageLine(r.storage, r.alertShare),
+      ].join('\n\n'),
+    ),
+    `<b>چه کار کنم؟</b>\n` +
+      quote(
+        '۱. در داشبورد Cloudflare پلن <b>Workers Paid</b> (ماهی ۵ دلار) را فعال کنید؛ سقف روزانه برداشته می‌شود.\n' +
+          '۲. یا سقف روزانه‌ی فروشگاه‌های پرمصرف را پایین بیاورید (📈 ظرفیت ← پرمصرف‌ها).',
+      ),
+    hint('اگر سهمیه‌ای تمام شود، همه‌ی فروشگاه‌ها تا ۳:۳۰ بامداد از کار می‌افتند.'),
+  ),
+  keyboard: inline([button('📈 جزئیات ظرفیت', PCB.admin.capacity, 'primary')]),
 });

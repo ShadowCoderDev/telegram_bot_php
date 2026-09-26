@@ -8,7 +8,7 @@ import type { Category, CategoryWithCount, CustomerSummary, Dialog, Faq, Order, 
  * query that forgets the shop filter fails loudly in tests instead of leaking another shop's data.
  */
 
-abstract class Repository {
+export abstract class Repository {
   constructor(
     protected readonly db: D1Database,
     readonly shopId: number,
@@ -32,8 +32,7 @@ const CUSTOMER_STATS = `
   (SELECT count(*) FROM orders o WHERE o.shop_id = ?1 AND o.user_id = u.id AND o.status NOT IN ('pending', 'cancel')) AS orders_count,
   (SELECT COALESCE(SUM(oi.price * oi.quantity), 0) FROM orders o JOIN order_items oi ON oi.order_id = o.id
      WHERE o.shop_id = ?1 AND o.user_id = u.id AND o.status IN ('approved', 'sending')) AS total_spent,
-  (SELECT count(*) FROM orders o WHERE o.shop_id = ?1 AND o.user_id = u.id AND o.status = 'payed') AS awaiting_review,
-  COALESCE((SELECT MAX(o.time) FROM orders o WHERE o.shop_id = ?1 AND o.user_id = u.id AND o.status NOT IN ('pending', 'cancel')), u.created_at) AS last_activity`;
+  (SELECT count(*) FROM orders o WHERE o.shop_id = ?1 AND o.user_id = u.id AND o.status = 'payed') AS awaiting_review`;
 
 /** Escapes LIKE wildcards so a search for "50%" matches literally. */
 const likeTerm = (s: string) => `%${s.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -48,7 +47,7 @@ export class UserRepository extends Repository {
   /** Insert-or-refresh; returns the row. */
   async upsert(chatId: number, name: string, username = ''): Promise<UserRow> {
     await this.run(
-      `INSERT INTO users (shop_id, chat_id, name, username) VALUES (?1, ?2, ?3, ?4)
+      `INSERT INTO users (shop_id, chat_id, name, username, last_activity) VALUES (?1, ?2, ?3, ?4, unixepoch())
        ON CONFLICT(shop_id, chat_id) DO UPDATE SET name = excluded.name, username = excluded.username`,
       chatId,
       name,
@@ -62,29 +61,37 @@ export class UserRepository extends Repository {
   customer(id: number) {
     return this.first<CustomerSummary>(`SELECT u.*, ${CUSTOMER_STATS} FROM users u WHERE u.shop_id = ?1 AND u.id = ?2`, id);
   }
-  /** Customers, most recently active first. */
+  /** Customers, most recently active first (read straight from idx_users_activity, one page at a time). */
   customersPage(limit: number, offset: number) {
     return this.all<CustomerSummary>(
-      `SELECT u.*, ${CUSTOMER_STATS} FROM users u WHERE u.shop_id = ?1 ORDER BY last_activity DESC, u.id DESC LIMIT ?2 OFFSET ?3`,
+      `SELECT u.*, ${CUSTOMER_STATS} FROM users u WHERE u.shop_id = ?1 ORDER BY u.last_activity DESC, u.id DESC LIMIT ?2 OFFSET ?3`,
       limit,
       offset,
     );
   }
-  /** Finds customers by name, @username, chat id, phone number or order tracking code. */
-  searchCustomers(query: string, limit = 20) {
+  /**
+   * Finds customers by order tracking code (one index lookup), or else by name, @username, chat id
+   * or phone number. That reads the shop's customers once, plus the shop's orders only when the
+   * query looks like part of a phone number.
+   */
+  async searchCustomers(query: string, limit = 20): Promise<CustomerSummary[]> {
     const q = query.trim().replace(/^@/, '');
+    const byCode = await this.first<{ user_id: number }>('SELECT user_id FROM orders WHERE track_id IN (?2, upper(?2)) AND shop_id = ?1', q);
+    const owner = byCode && (await this.customer(byCode.user_id));
+    if (owner) return [owner];
     const numeric = /^\d+$/.test(q) ? Number(q) : -1;
+    const phoneLike = /^\+?\d{4,}$/.test(q) ? 1 : 0;
     return this.all<CustomerSummary>(
       `SELECT u.*, ${CUSTOMER_STATS} FROM users u
         WHERE u.shop_id = ?1
           AND (u.name LIKE ?2 ESCAPE '\\' OR u.username LIKE ?2 ESCAPE '\\' OR u.chat_id = ?3
-               OR EXISTS (SELECT 1 FROM orders o LEFT JOIN order_details od ON od.order_id = o.id
-                           WHERE o.shop_id = ?1 AND o.user_id = u.id AND (o.track_id = ?4 COLLATE NOCASE OR od.phone_number LIKE ?2 ESCAPE '\\')))
-        ORDER BY last_activity DESC LIMIT ?5`,
+               OR (?5 AND u.id IN (SELECT o.user_id FROM order_details od JOIN orders o ON o.id = od.order_id
+                                    WHERE od.shop_id = ?1 AND od.phone_number LIKE ?2 ESCAPE '\\')))
+        ORDER BY u.last_activity DESC LIMIT ?4`,
       likeTerm(q),
       numeric,
-      q,
       limit,
+      phoneLike,
     );
   }
   /** Latest shipping details the customer entered, for the customer page. */
@@ -227,17 +234,11 @@ export class OrderRepository extends Repository {
   recentForUser(userId: number, limit = 5) {
     return this.all<Order>(`SELECT * FROM orders WHERE ${PLACED} AND user_id = ?2 ORDER BY id DESC LIMIT ?3`, userId, limit);
   }
+  /** Placed orders, newest first (idx_orders_shop_time: reads about one page of rows, however many orders there are). */
   placedPage(limit: number, offset: number, userId?: number) {
     return userId === undefined
-      ? this.all<Order>(`SELECT * FROM orders WHERE ${PLACED} ORDER BY id DESC LIMIT ?2 OFFSET ?3`, limit, offset)
+      ? this.all<Order>(`SELECT * FROM orders WHERE ${PLACED} ORDER BY time DESC, id DESC LIMIT ?2 OFFSET ?3`, limit, offset)
       : this.all<Order>(`SELECT * FROM orders WHERE ${PLACED} AND user_id = ?2 ORDER BY id DESC LIMIT ?3 OFFSET ?4`, userId, limit, offset);
-  }
-  async countPlaced(userId?: number): Promise<number> {
-    const r =
-      userId === undefined
-        ? await this.first<{ n: number }>(`SELECT count(*) AS n FROM orders WHERE ${PLACED}`)
-        : await this.first<{ n: number }>(`SELECT count(*) AS n FROM orders WHERE ${PLACED} AND user_id = ?2`, userId);
-    return r!.n;
   }
   /** All paid orders waiting for an admin – shown as a badge in the admin panel. */
   async countAllAwaitingReview(): Promise<number> {
@@ -270,7 +271,8 @@ export class OrderRepository extends Repository {
   unlockPrices(orderId: number) {
     return this.run(
       `UPDATE order_items SET price = NULL, product_title = NULL
-       WHERE shop_id = ?1 AND order_id = ?2 AND order_id IN (SELECT id FROM orders WHERE shop_id = ?1 AND status = 'pending')`,
+       WHERE shop_id = ?1 AND order_id = ?2 AND price IS NOT NULL
+         AND order_id IN (SELECT id FROM orders WHERE shop_id = ?1 AND status = 'pending')`,
       orderId,
     );
   }
@@ -351,6 +353,12 @@ export class OrderRepository extends Repository {
              price         = (SELECT price FROM products WHERE products.id = order_items.product_id),
              product_title = (SELECT title FROM products WHERE products.id = order_items.product_id)
            WHERE shop_id = ?1 AND order_id = ?2 AND price IS NULL`,
+          d.order_id,
+        ),
+        // The customer list is ordered by this (idx_users_activity).
+        this.prepare(
+          `UPDATE users SET last_activity = unixepoch()
+            WHERE shop_id = ?1 AND id = (SELECT user_id FROM orders WHERE shop_id = ?1 AND id = ?2 AND status = 'pending')`,
           d.order_id,
         ),
         this.prepare("UPDATE orders SET status = 'payed' WHERE shop_id = ?1 AND id = ?2 AND status = 'pending'", d.order_id),
@@ -463,12 +471,22 @@ export const PLATFORM_SETTING_DEFAULTS = {
   trial_days: '7',
   bank_info: 'شماره کارت هنوز تنظیم نشده است.',
   support: 'پشتیبانی تنظیم نشده',
+  // Capacity (src/capacity.ts): each shop's daily cap on updates, and the Cloudflare quotas the
+  // whole platform must stay under (the free plan's daily limits by default).
+  trial_daily_limit: '1000',
+  paid_daily_limit: '5000',
+  platform_daily_limit: '3000',
+  alert_percent: '70',
+  quota_requests: '100000',
+  quota_writes: '100000',
+  quota_reads: '5000000',
+  quota_storage_mb: '500',
 } as const;
 export type PlatformSettingKey = keyof typeof PLATFORM_SETTING_DEFAULTS;
 export const PLATFORM_SETTING_KEYS = Object.keys(PLATFORM_SETTING_DEFAULTS) as PlatformSettingKey[];
 
 /** Internal values the bot keeps for itself (not shown in the settings menu). */
-type InternalKey = 'admin_chat_ids' | 'webhook_marker' | 'bot_username';
+type InternalKey = 'admin_chat_ids' | 'webhook_marker' | 'bot_username' | 'capacity_alert' | 'stats_cache';
 
 /** Per-shop key/value settings with defaults; the platform uses the same table under shop 0. */
 export class SettingsRepository<K extends string = SettingKey> extends Repository {
@@ -550,25 +568,5 @@ export class DialogRepository extends Repository {
   }
   close(buyerChatId: number) {
     return this.run('DELETE FROM dialogs WHERE shop_id = ?1 AND buyer_chat_id = ?2', buyerChatId);
-  }
-}
-
-/** Records every Telegram update once: retries are skipped and per-chat floods are throttled. */
-export class UpdateLogRepository extends Repository {
-  /** False when this update_id was already processed (Telegram redelivery). */
-  async firstTime(updateId: number, chatId: number): Promise<boolean> {
-    const r = await this.run('INSERT INTO processed_updates (shop_id, update_id, chat_id) VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING', updateId, chatId);
-    return r.meta.changes > 0;
-  }
-  async recentCount(chatId: number, seconds: number): Promise<number> {
-    const r = await this.first<{ n: number }>(
-      'SELECT count(*) AS n FROM processed_updates WHERE shop_id = ?1 AND chat_id = ?2 AND at >= unixepoch() - ?3',
-      chatId,
-      seconds,
-    );
-    return r!.n;
-  }
-  prune(olderThanSeconds = 2 * 86400) {
-    return this.run('DELETE FROM processed_updates WHERE shop_id = ?1 AND at < unixepoch() - ?2', olderThanSeconds);
   }
 }

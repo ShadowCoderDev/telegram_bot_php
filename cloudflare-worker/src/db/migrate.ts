@@ -2,6 +2,8 @@ import m0001 from '../../migrations/0001_init.sql';
 import m0002 from '../../migrations/0002_product_image_file_id.sql';
 import m0003 from '../../migrations/0003_customers_and_abuse_guards.sql';
 import m0004 from '../../migrations/0004_multi_tenant.sql';
+import m0005 from '../../migrations/0005_cheaper_bookkeeping.sql';
+import m0006 from '../../migrations/0006_reads_that_scale.sql';
 
 /**
  * The Worker brings its own database up to date on first use, so a plain `wrangler deploy`
@@ -14,14 +16,34 @@ const MIGRATIONS: { name: string; sql: string }[] = [
   { name: '0002_product_image_file_id.sql', sql: m0002 },
   { name: '0003_customers_and_abuse_guards.sql', sql: m0003 },
   { name: '0004_multi_tenant.sql', sql: m0004 },
+  { name: '0005_cheaper_bookkeeping.sql', sql: m0005 },
+  { name: '0006_reads_that_scale.sql', sql: m0006 },
 ];
 
-/** Splits a migration file into statements (our files have no semicolons inside strings or triggers). */
-export const splitSql = (sql: string): string[] =>
-  sql
-    .split(/;\s*(?:\n|$)/)
-    .map((stmt) => stmt.trim())
-    .filter((stmt) => stmt.replace(/^\s*--.*$/gm, '').trim());
+/**
+ * Splits a migration file into statements at semicolons that end a line. A CREATE TRIGGER body has
+ * its own semicolons, so everything up to its closing END stays one statement.
+ * (Our files have no semicolons at line ends inside strings.)
+ */
+export function splitSql(sql: string): string[] {
+  const out: string[] = [];
+  let trigger: string | null = null;
+  for (const piece of sql.split(/;\s*(?:\n|$)/)) {
+    if (trigger !== null) {
+      trigger += `;\n${piece}`;
+      if (/\bEND\s*$/i.test(piece.trim())) {
+        out.push(trigger.trim());
+        trigger = null;
+      }
+      continue;
+    }
+    const code = piece.replace(/^\s*--.*$/gm, '').trim();
+    if (/^CREATE\s+TRIGGER\b/i.test(code) && !/\bEND\s*$/i.test(code)) trigger = piece;
+    else out.push(piece.trim());
+  }
+  if (trigger !== null) out.push(trigger.trim());
+  return out.filter((stmt) => stmt.replace(/^\s*--.*$/gm, '').trim());
+}
 
 /** Applies every pending migration. Exported for tests; the Worker uses ensureSchema(). */
 export async function migrate(db: D1Database, upTo = MIGRATIONS.length): Promise<void> {

@@ -4,11 +4,12 @@
  * subscription lapse and renews it; the platform owner approves the payment.
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { rmSync } from 'node:fs';
+import { mkdirSync, openSync, rmSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { derivedSecret } from '../src/crypto';
+import { send } from './harness';
 
 const PORT = 8798;
 const PERSIST = '.wrangler/platform-e2e';
@@ -37,7 +38,7 @@ const buttons = (c: Call | undefined): { text: string; callback_data?: string; u
 const shopSecret = () => calls.filter((c) => c.token === SHOP_TOKEN && c.method === 'setWebhook').at(-1)!.params.secret_token as string;
 
 async function post(path: string, secret: string, update: object) {
-  return fetch(`http://127.0.0.1:${PORT}${path}`, {
+  return send(`http://127.0.0.1:${PORT}${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': secret },
     body: JSON.stringify({ update_id: ++updateId, ...update }),
@@ -63,6 +64,10 @@ const shop = {
 const sql = (command: string) =>
   execFileSync('npx', ['wrangler', 'd1', 'execute', 'shop', '--local', '--persist-to', PERSIST, '--command', command], { stdio: 'ignore' });
 const now = () => Math.floor(Date.now() / 1000);
+const sqlValue = async (query: string): Promise<unknown> => {
+  const out = execFileSync('npx', ['wrangler', 'd1', 'execute', 'shop', '--local', '--persist-to', PERSIST, '--json', '--command', query]).toString();
+  return Object.values(JSON.parse(out)[0].results[0])[0];
+};
 
 beforeAll(async () => {
   platformSecret = await derivedSecret(MASTER_KEY, 'platform-webhook');
@@ -89,11 +94,13 @@ beforeAll(async () => {
   const tgPort = (telegram.address() as AddressInfo).port;
 
   rmSync(PERSIST, { recursive: true, force: true });
+  mkdirSync(PERSIST, { recursive: true });
+  const log = openSync(`${PERSIST}/wrangler.log`, 'w'); // the Worker's console output, for debugging
   worker = spawn('npx', [
     'wrangler', 'dev', '--port', String(PORT), '--ip', '127.0.0.1', '--inspector-port', '9330', '--persist-to', PERSIST, '--test-scheduled',
     '--var', `PLATFORM_BOT_TOKEN:${PLATFORM_TOKEN}`, '--var', `MASTER_KEY:${MASTER_KEY}`, '--var', `PLATFORM_ADMIN_IDS:${OWNER}`,
     '--var', `TELEGRAM_API_BASE:http://127.0.0.1:${tgPort}`, '--var', 'FLOOD_LIMIT:1000',
-  ], { stdio: 'ignore', detached: true });
+  ], { stdio: ['ignore', log, log], detached: true });
   for (let i = 0; i < 120; i++) {
     try {
       if ((await fetch(`http://127.0.0.1:${PORT}/`)).ok) return;
@@ -236,5 +243,84 @@ describe('SaaS platform', () => {
     await shop.text(CUSTOMER, '/start');
     expect(last(SHOP_TOKEN, CUSTOMER)).toContain('در دسترس نیست');
     await platform.press(OWNER, 'pa:shop:susp:2');
+  });
+
+  it('caps a shop per day: customers are told, admins keep working, everyone is alerted once', async () => {
+    sql('UPDATE bot_usage SET updates = 0 WHERE shop_id = 2');
+    sql('UPDATE shops SET daily_limit = 5 WHERE id = 2');
+    for (let i = 0; i < 5; i++) await shop.text(CUSTOMER, '/start'); // updates 1–5: 80% at 4, full at 5
+    const alerts = (chat: number, text: string) => byBot(SHOP_TOKEN, chat).filter((c) => String(c.params.text).includes(text));
+    expect(alerts(SELLER, 'نزدیک سقف روزانه')).toHaveLength(1);
+    expect(alerts(SELLER, '<b>ظرفیت امروز تکمیل شد</b>')).toHaveLength(1);
+    expect(alerts(OTHER_SELLER, '<b>ظرفیت امروز تکمیل شد</b>')).toHaveLength(1); // every admin of the shop
+    expect(byBot(PLATFORM_TOKEN, OWNER).filter((c) => String(c.params.text).includes('یک فروشگاه به سقف روزانه رسید'))).toHaveLength(1);
+
+    await shop.text(CUSTOMER, 'hello');
+    expect(last(SHOP_TOKEN, CUSTOMER)).toContain('ظرفیت امروز این فروشگاه تکمیل شده');
+    await shop.text(CUSTOMER, 'hello again'); // told once, not on every message
+    expect(alerts(CUSTOMER, 'ظرفیت امروز این فروشگاه تکمیل شده')).toHaveLength(1);
+    await shop.press(CUSTOMER, 'shop');
+    expect(calls.at(-1)).toMatchObject({ method: 'answerCallbackQuery', params: { show_alert: true } });
+    expect(calls.at(-1)!.params.text).toContain('ظرفیت امروز');
+
+    // Admins keep working past the cap, and their panel says what is going on...
+    await shop.text(SELLER, '/start');
+    expect(byBot(SHOP_TOKEN, SELLER).at(-2)!.params.text).toContain('ظرفیت امروز تکمیل شده');
+    expect(await sqlValue('SELECT updates FROM bot_usage WHERE shop_id = 2')).toBe(6);
+    expect(await sqlValue('SELECT dropped FROM bot_usage WHERE shop_id = 2')).toBeGreaterThanOrEqual(2);
+    // ... up to twice the cap, so not even a shop's own admin can spend the platform's quota.
+    sql('UPDATE bot_usage SET updates = 10 WHERE shop_id = 2');
+    await shop.text(SELLER, '/start');
+    expect(last(SHOP_TOKEN, SELLER)).toContain('مصرف امروز این فروشگاه به سقف رسیده');
+    sql('UPDATE bot_usage SET updates = 6 WHERE shop_id = 2');
+  });
+
+  it('caps sellers on the platform bot per day, but never the platform admins', async () => {
+    sql('UPDATE bot_usage SET updates = 3000 WHERE shop_id = 0');
+    await platform.text(OTHER_SELLER, '/start');
+    expect(last(PLATFORM_TOKEN, OTHER_SELLER)).toContain('ظرفیت امروز ربات تکمیل شده');
+    await platform.text(OWNER, '/start');
+    expect(last(PLATFORM_TOKEN, OWNER)).toContain('پنل مدیریت پلتفرم');
+    sql('UPDATE bot_usage SET updates = 10 WHERE shop_id = 0');
+  });
+
+  it('shows the platform owner the capacity page and lets them raise a shop\'s cap', async () => {
+    await platform.press(OWNER, 'pa:cap');
+    const page = last(PLATFORM_TOKEN, OWNER);
+    expect(page).toContain('ظرفیت پلتفرم');
+    expect(page).toContain('نوشتن در دیتابیس');
+    expect(page).toMatch(/حجم دیتابیس: <b>[۰-۹.]+ MB<\/b> از ۵۰۰ MB/);
+    expect(page).toContain('@shop555555_bot'); // among today's busiest
+
+    await platform.press(OWNER, 'pa:shop:2');
+    expect(last(PLATFORM_TOKEN, OWNER)).toContain('از ۵ پیام');
+    await platform.press(OWNER, 'pa:shop:cap2:2');
+    expect(last(PLATFORM_TOKEN, OWNER)).toContain('از ۱۰ پیام');
+    await shop.press(CUSTOMER, 'shop');
+    expect(last(SHOP_TOKEN, CUSTOMER)).not.toContain('ظرفیت امروز');
+    await platform.press(OWNER, 'pa:shop:capdef:2'); // back to the plan's default (paid: 5,000)
+    expect(last(PLATFORM_TOKEN, OWNER)).toContain('از ۵,۰۰۰ پیام');
+
+    // The plan caps are platform settings, validated.
+    await platform.press(OWNER, 'pa:capset');
+    await platform.press(OWNER, 'pa:set:trial_daily_limit');
+    await platform.text(OWNER, '10');
+    expect(last(PLATFORM_TOKEN, OWNER)).toContain('عددی بین');
+    await platform.text(OWNER, '2000');
+    expect(last(PLATFORM_TOKEN, OWNER)).toContain('۲,۰۰۰');
+    await platform.press(SELLER, 'p:limits');
+    expect(last(PLATFORM_TOKEN, SELLER)).toContain('۲,۰۰۰');
+  });
+
+  it('raises the capacity alarm from the hourly cron, once per level per day', async () => {
+    await platform.press(OWNER, 'pa:set:quota_writes');
+    await platform.text(OWNER, '1000');
+    sql('UPDATE bot_usage SET rows_written = rows_written + 5000 WHERE shop_id = 2');
+    await fetch(`http://127.0.0.1:${PORT}/__scheduled?cron=0+*+*+*+*`);
+    await fetch(`http://127.0.0.1:${PORT}/__scheduled?cron=0+*+*+*+*`);
+    const alarms = byBot(PLATFORM_TOKEN, OWNER).filter((c) => String(c.params.text).includes('نزدیک سقف Cloudflare'));
+    expect(alarms).toHaveLength(1);
+    expect(buttons(alarms[0])[0]!.callback_data).toBe('pa:cap');
+    expect(byBot(PLATFORM_TOKEN, SELLER).some((c) => String(c.params.text).includes('Cloudflare'))).toBe(false);
   });
 });

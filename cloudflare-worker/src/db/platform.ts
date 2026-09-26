@@ -1,4 +1,4 @@
-import { extendedUntil } from '../services/subscription';
+import { DAY, GRACE_DAYS, extendedUntil } from '../services/subscription';
 
 /*
  * Platform-level tables (not owned by any one shop): the shops themselves and their subscription
@@ -19,6 +19,8 @@ export interface ShopRow {
   paid_until: number;
   status: ShopStatus;
   reminder_stage: number;
+  /** Daily cap on the updates the shop's bot handles; null = its plan's default. */
+  daily_limit: number | null;
   created_at: number;
 }
 
@@ -83,6 +85,17 @@ export class ShopRepository extends GlobalRepository {
   /** Free days granted by the platform owner. */
   extend(id: number, seconds: number, now: number) {
     return this.run('UPDATE shops SET paid_until = MAX(paid_until, ?) + ?, reminder_stage = 0 WHERE id = ?', now, seconds, id);
+  }
+  setDailyLimit(id: number, limit: number | null) {
+    return this.run('UPDATE shops SET daily_limit = ? WHERE id = ?', limit, id);
+  }
+  /** Seller shops still open to customers (grace days included), grouped by what decides their cap. */
+  openCapGroups(now: number) {
+    return this.all<{ plan: ShopPlan; daily_limit: number | null; shops: number }>(
+      `SELECT plan, daily_limit, count(*) AS shops FROM shops
+        WHERE plan != 'owner' AND status = 'active' AND paid_until >= ? GROUP BY plan, daily_limit`,
+      now - GRACE_DAYS * DAY,
+    );
   }
   setReminderStage(id: number, stage: number) {
     return this.run('UPDATE shops SET reminder_stage = ? WHERE id = ?', stage, id);

@@ -6,7 +6,9 @@ import { execFileSync } from 'node:child_process';
 import { rmSync } from 'node:fs';
 import { getPlatformProxy } from 'wrangler';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CategoryRepository, FaqRepository, OrderRepository, ProductRepository, SessionRepository, SettingsRepository, UpdateLogRepository, UserRepository } from '../src/db/repositories';
+import { emptyUsage, meterD1 } from '../src/db/meter';
+import { CategoryRepository, FaqRepository, OrderRepository, ProductRepository, SessionRepository, SettingsRepository, UserRepository } from '../src/db/repositories';
+import { PlatformUsageRepository, UNCAPPED, UsageRepository, addPendingUsage, utcDay } from '../src/db/usage';
 
 const PERSIST = '.wrangler/repo-test';
 let proxy: Awaited<ReturnType<typeof getPlatformProxy<{ DB: D1Database }>>>;
@@ -100,7 +102,7 @@ describe('payment', () => {
   });
 });
 
-describe('customers & update log', () => {
+describe('customers', () => {
   it('searches customers with LIKE wildcards taken literally', async () => {
     const users = new UserRepository(db, 1);
     expect((await users.searchCustomers('50%')).map((u) => u.id)).toEqual([1]);
@@ -109,12 +111,81 @@ describe('customers & update log', () => {
     expect(await users.searchCustomers('sara_')).toHaveLength(1);
     expect(await users.searchCustomers('sar__')).toEqual([]);
   });
+});
 
-  it('processes each update id once', async () => {
-    const log = new UpdateLogRepository(db, 1);
-    expect(await log.firstTime(42, 111)).toBe(true);
-    expect(await log.firstTime(42, 111)).toBe(false);
-    expect(await log.recentCount(111, 10)).toBe(1);
+describe('usage tracking (redeliveries, daily cap)', () => {
+  const T = 1_800_000_000; // a fixed "now"
+  const DAY = 86_400;
+  const OPEN = { updates: UNCAPPED, written: UNCAPPED, read: UNCAPPED };
+  const cap = (updates: number) => ({ ...OPEN, updates });
+
+  it('handles each update id once, in any order, for one write each', async () => {
+    const usage = emptyUsage();
+    const bot = new UsageRepository(meterD1(db, usage), 7);
+    expect(await bot.track(500, T, OPEN)).toEqual({ status: 'ok', updates: 1 });
+    expect(usage.rowsWritten).toBe(1);
+    expect(await bot.track(502, T, OPEN)).toEqual({ status: 'ok', updates: 2 });
+    expect(await bot.track(501, T, OPEN)).toEqual({ status: 'ok', updates: 3 }); // late, not a duplicate
+    expect(await bot.track(502, T, OPEN)).toEqual({ status: 'duplicate' });
+    expect(await bot.track(500, T, OPEN)).toEqual({ status: 'duplicate' });
+    expect(usage.rowsWritten).toBe(3);
+    // Telegram restarts ids from a random number after a week of silence: still accepted.
+    expect(await bot.track(3, T, OPEN)).toEqual({ status: 'ok', updates: 4 });
+    // Two deliveries of the same update at the same moment: only one passes.
+    const both = await Promise.all([bot.track(900, T, OPEN), bot.track(900, T, OPEN)]);
+    expect(both.map((r) => r.status).sort()).toEqual(['duplicate', 'ok']);
+  });
+
+  it('remembers enough recent ids even when they are long', async () => {
+    const bot = new UsageRepository(db, 8);
+    const base = 987_654_321;
+    for (let i = 0; i < 60; i++) await bot.track(base + i, T, OPEN);
+    for (let i = 20; i < 60; i++) expect((await bot.track(base + i, T, OPEN)).status, `id ${i}`).toBe('duplicate');
+  });
+
+  it('refuses updates over the daily cap without writing, and starts again the next day', async () => {
+    const bot = new UsageRepository(db, 9);
+    for (let i = 1; i <= 3; i++) expect(await bot.track(i, T, cap(3))).toEqual({ status: 'ok', updates: i });
+    const usage = emptyUsage();
+    const metered = new UsageRepository(meterD1(db, usage), 9);
+    expect(await metered.track(4, T, cap(3))).toEqual({ status: 'capped', updates: 3, by: 'updates' });
+    expect(usage.rowsWritten).toBe(0);
+    expect((await bot.track(4, T, cap(3))).status).toBe('capped'); // still refused, so not remembered as seen
+    expect(await bot.track(5, T, OPEN)).toEqual({ status: 'ok', updates: 4 }); // admins are never capped
+    expect(await bot.track(4, T + DAY, cap(3))).toEqual({ status: 'ok', updates: 1 }); // a new UTC day
+
+    // Yesterday's numbers moved to the history (by the trigger), including the 2 refused requests;
+    // today's row starts from zero.
+    expect(await db.prepare('SELECT day, updates, dropped FROM usage_history WHERE shop_id = 9').all().then((r) => r.results)).toEqual([
+      { day: utcDay(T), updates: 4, dropped: 2 },
+    ]);
+    const history = await new PlatformUsageRepository(db).history(utcDay(T + DAY));
+    expect(history.find((h) => h.day === utcDay(T))!.updates).toBeGreaterThanOrEqual(4);
+    expect(await bot.today(T + DAY)).toMatchObject({ updates: 1 });
+    expect(await bot.today(T + 2 * DAY)).toMatchObject({ updates: 0 });
+  });
+
+  it('stops a bot that used its share of the rows, whatever its update count', async () => {
+    const bot = new UsageRepository(db, 11);
+    await bot.track(1, T, OPEN);
+    addPendingUsage(11, { queries: 1, rowsRead: 900, rowsWritten: 40 });
+    const budget = { updates: UNCAPPED, written: 50, read: 1000 };
+    expect((await bot.track(2, T, budget)).status).toBe('ok'); // brings the day to 40 written, 900 read
+    addPendingUsage(11, { queries: 1, rowsRead: 200, rowsWritten: 0 });
+    expect((await bot.track(3, T, budget)).status).toBe('ok'); // reads now 1,100: over the budget
+    expect(await bot.track(4, T, budget)).toEqual({ status: 'capped', updates: 3, by: 'rows' });
+    expect((await bot.track(4, T + DAY, budget)).status).toBe('ok'); // a new day
+  });
+
+  it("adds each request's measured cost with the bot's next update", async () => {
+    const bot = new UsageRepository(db, 10);
+    await bot.track(1, T, OPEN);
+    addPendingUsage(10, { queries: 3, rowsRead: 40, rowsWritten: 6 });
+    addPendingUsage(10, { queries: 1, rowsRead: 2, rowsWritten: 1 });
+    await bot.track(2, T, OPEN);
+    expect(await bot.today(T)).toMatchObject({ updates: 2, rows_written: 7, rows_read: 42 });
+    const totals = await new PlatformUsageRepository(db).totals(utcDay(T));
+    expect(totals.rows_written).toBeGreaterThanOrEqual(7);
   });
 });
 
@@ -133,7 +204,7 @@ describe('shop isolation', () => {
     expect(await products.findVisible(1)).toBeNull();
     expect(await orders2.find(1)).toBeNull();
     expect(await orders2.lines(1)).toEqual([]);
-    expect(await orders2.countPlaced()).toBe(0);
+    expect(await orders2.placedPage(10, 0)).toEqual([]);
     expect(await users.customersPage(10, 0)).toEqual([]);
     expect(await users.searchCustomers('Sara')).toEqual([]);
 
