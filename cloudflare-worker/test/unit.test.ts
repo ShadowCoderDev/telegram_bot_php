@@ -6,7 +6,7 @@ import { Router } from '../src/telegram/Router';
 import { button } from '../src/telegram/keyboard';
 import type { TelegramClient } from '../src/telegram/TelegramClient';
 import type { Update } from '../src/telegram/types';
-import { escapeHtml, money } from '../src/utils/format';
+import { escapeHtml, money, splitHtml } from '../src/utils/format';
 import { formatPersianDate, parseAmount, tehranDayAndMonthStart, toEnglishDigits, toJalali } from '../src/utils/persian';
 import { cartView, myOrdersView, productCard } from '../src/views/user';
 import { parseAdminIds } from '../src/deps';
@@ -39,6 +39,22 @@ describe('format', () => {
   });
 });
 
+describe('splitHtml', () => {
+  it('keeps short text whole', () => {
+    expect(splitHtml('<b>hi</b>')).toEqual(['<b>hi</b>']);
+  });
+  it('splits between lines and re-opens tags that span the cut', () => {
+    const text = '<b>title</b>\n<blockquote>' + Array.from({ length: 300 }, (_, i) => `line ${i}`).join('\n') + '</blockquote>\nend';
+    const parts = splitHtml(text, 500);
+    expect(parts.length).toBeGreaterThan(1);
+    for (const part of parts) {
+      expect(part.length).toBeLessThanOrEqual(500);
+      expect(part.split('<blockquote>').length).toBe(part.split('</blockquote>').length); // balanced
+    }
+    expect(parts.join('\n')).toContain('line 299');
+  });
+});
+
 describe('order state machine', () => {
   it('takes stock on first approval and returns it on rejection', () => {
     expect(planTransition({ status: 'payed', stock_taken: 0 }, 'approve')).toEqual({ status: 'approved', stock: 'take' });
@@ -56,11 +72,15 @@ describe('order state machine', () => {
 describe('cart helpers', () => {
   it('clamps quantities and totals lines', () => {
     expect([clampQty(0), clampQty(5), clampQty(500), clampQty(NaN)]).toEqual([1, 5, 99, 1]);
+    expect([clampQty(8, 3), clampQty(2, 3), clampQty(5, 0)]).toEqual([3, 2, 1]);
     expect(cartTotal([{ price: 1000, quantity: 2 }, { price: 50, quantity: 3 }])).toBe(2150);
   });
   it('reports lines exceeding inventory', () => {
-    const line = { item_id: 1, product_id: 1, price: 1, title: 'Book', quantity: 3, inventory: 2 };
-    expect(stockProblems([line, { ...line, quantity: 1 }])).toEqual([{ title: 'Book', inventory: 2 }]);
+    const line = { item_id: 1, product_id: 1, price: 1, title: 'Book', quantity: 3, inventory: 2, available: 1 };
+    expect(stockProblems([line, { ...line, quantity: 1 }, { ...line, quantity: 1, title: 'Gone', available: 0 }])).toEqual([
+      { title: 'Book', inventory: 2, available: true },
+      { title: 'Gone', inventory: 2, available: false },
+    ]);
   });
 });
 
@@ -82,13 +102,24 @@ describe('keyboard & views', () => {
     expect(view.text).toContain('2,000');
     expect(view.photo).toBeUndefined();
   });
+  it('offers no quantity or add-to-cart buttons for an out-of-stock product', () => {
+    const view = productCard({ ...PRODUCT, inventory: 0 }, 1);
+    const data = (view.keyboard as { inline_keyboard: { callback_data?: string }[][] }).inline_keyboard.flat().map((b) => b.callback_data);
+    expect(data).toEqual(['cat:2']);
+    expect(view.text).toContain('ناموجود');
+  });
+  it('disables ➕ at the stock limit', () => {
+    const view = productCard({ ...PRODUCT, inventory: 2 }, 2);
+    const row = (view.keyboard as { inline_keyboard: { callback_data?: string }[][] }).inline_keyboard[0]!;
+    expect(row.map((b) => b.callback_data)).toEqual(['qty:1:1', 'noop', 'noop']);
+  });
   it('shows an uploaded product photo as a photo card within the caption limit', () => {
     const view = productCard({ ...PRODUCT, image_file_id: 'PHOTO', description: 'x'.repeat(3000) }, 1);
     expect(view.photo).toBe('PHOTO');
     expect(view.text.length).toBeLessThanOrEqual(1024);
   });
   it('lists the unit price on its own line in the cart and in orders', () => {
-    const line = { item_id: 3, product_id: 1, title: 'Book', price: 7_800_000, quantity: 3, inventory: 9 };
+    const line = { item_id: 3, product_id: 1, title: 'Book', price: 7_800_000, quantity: 3, inventory: 9, available: 1 };
     for (const text of [
       cartView([line]).text,
       myOrdersView([{ id: 1, user_id: 1, user_chat_id: 1, track_id: 'T', status: 'payed', stock_taken: 0, time: 0 }], new Map([[1, [line]]])).text,

@@ -1,4 +1,4 @@
-import type { Category, Faq, Order, Product } from '../db/models';
+import type { Category, CustomerSummary, Faq, Order, Product } from '../db/models';
 import type { SettingKey } from '../db/repositories';
 import type { FullOrder } from '../services/OrderService';
 import { ALLOWED_ACTIONS, STATUS_FA, type AdminOrderAction } from '../services/orderStatus';
@@ -20,10 +20,26 @@ export const adminReplyKeyboard = (): View => ({
   keyboard: replyKeyboard([[ADMIN_HOME]]),
 });
 
+export const PAGE_SIZE = 10;
+export const pageCount = (total: number) => Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+/** ◀️ قبلی   ۲ / ۵   بعدی ▶️ – omitted when everything fits on one page. */
+const pager = (page: number, pages: number, toData: (page: number) => string): InlineKeyboardButton[][] =>
+  pages <= 1
+    ? []
+    : [
+        [
+          ...(page > 0 ? [button('◀️ قبلی', toData(page - 1))] : []),
+          button(`${fa(page + 1)} / ${fa(pages)}`, CB.noop),
+          ...(page < pages - 1 ? [button('بعدی ▶️', toData(page + 1))] : []),
+        ],
+      ];
+
 export const adminRoot = (): View => ({
   text: sections(heading('🔐', 'پنل مدیریت'), '👇 یکی از بخش‌ها را انتخاب کنید:'),
   keyboard: inline(
-    [button('🧾 سفارشات', A.orders, 'primary'), button('📊 آمار', A.stats)],
+    [button('🧾 سفارشات', A.orders, 'primary'), button('👥 مشتریان', A.customers, 'primary')],
+    [button('📊 آمار', A.stats)],
     [button('➕ محصول جدید', A.addProduct, 'success'), button('➕ دسته‌بندی جدید', A.addCategory, 'success')],
     [button('✏️ محصولات', A.products), button('📂 دسته‌بندی‌ها', A.categories)],
     [button('❓ سوالات متداول', A.faqs), button('⚙️ تنظیمات', A.settings)],
@@ -124,12 +140,15 @@ export const categoryPicker = (cats: Category[], title: string, toData: (c: Cate
 
 /* ---------- products ---------- */
 
-export const productsList = (products: Product[]): View =>
-  products.length
+export const productsList = (products: Product[], page: number, total: number): View =>
+  total
     ? {
-        text: sections(heading('✏️', 'محصولات'), `${hint(`${fa(products.length)} محصول`)}   ${hint('🟢 فعال   🔴 غیرفعال')}`),
+        text: sections(heading('✏️', 'محصولات'), `${hint(`${fa(total)} محصول`)}   ${hint('🟢 فعال   🔴 غیرفعال   ⛔ ناموجود')}`),
         keyboard: inline(
-          ...products.map((p) => [button(`${statusIcon(p.status)} ${truncate(p.title, 26)} · ${money(p.price)} ت`, A.product(p.id))]),
+          ...products.map((p) => [
+            button(`${p.inventory <= 0 ? '⛔' : statusIcon(p.status)} ${truncate(p.title, 26)} · ${money(p.price)} ت`, A.product(p.id)),
+          ]),
+          ...pager(page, pageCount(total), A.productsPage),
           toAdminRoot(),
         ),
       }
@@ -183,16 +202,90 @@ export const productEditMenu = (id: number): View => {
 
 const STATUS_ICON: Record<string, string> = { payed: '🟡', approved: '🟢', sending: '📤', rejected: '🔴', cancel: '⚪', pending: '⚪' };
 
-export const ordersList = (orders: Order[]): View =>
-  orders.length
+const STATUS_LEGEND = hint('🟡 منتظر تایید   🟢 تایید شده   📤 ارسال شده   🔴 رد شده');
+const orderButton = (o: Order) => button(`${STATUS_ICON[o.status]} ${o.track_id} · ${formatPersianDate(o.time)}`, A.order(o.id));
+
+export const ordersList = (orders: Order[], page: number, total: number): View =>
+  total
     ? {
-        text: sections(heading('🧾', 'سفارشات اخیر'), hint('🟡 منتظر تایید   🟢 تایید شده   📤 ارسال شده   🔴 رد شده')),
-        keyboard: inline(
-          ...orders.map((o) => [button(`${STATUS_ICON[o.status]} ${o.track_id} · ${formatPersianDate(o.time)}`, A.order(o.id))]),
-          toAdminRoot(),
-        ),
+        text: sections(heading('🧾', 'سفارشات'), `${hint(`${fa(total)} سفارش`)}\n${STATUS_LEGEND}`),
+        keyboard: inline(...orders.map((o) => [orderButton(o)]), ...pager(page, pageCount(total), A.ordersPage), toAdminRoot()),
       }
     : done(sections(heading('🧾', 'سفارشات'), 'هنوز سفارشی ثبت نشده است.'));
+
+/* ---------- customers ---------- */
+
+const customerLabel = (c: CustomerSummary) =>
+  `${c.status === 'disable' ? '🚫' : c.awaiting_review ? '🟡' : '👤'} ${truncate(c.name || String(c.chat_id), 22)} · ${fa(c.orders_count)} سفارش`;
+
+export const customersList = (customers: CustomerSummary[], page: number, total: number): View => ({
+  text: sections(
+    heading('👥', 'مشتریان'),
+    `${hint(`${fa(total)} مشتری · به ترتیب آخرین فعالیت`)}\n${hint('🟡 سفارش منتظر تایید دارد   🚫 مسدود')}`,
+  ),
+  keyboard: inline(
+    [button('🔍 جستجوی مشتری', A.findCustomer, 'primary')],
+    ...customers.map((c) => [button(customerLabel(c), A.customer(c.id))]),
+    ...pager(page, pageCount(total), A.customersPage),
+    toAdminRoot(),
+  ),
+});
+
+export const customerSearchResults = (query: string, customers: CustomerSummary[]): View => ({
+  text: customers.length
+    ? sections(heading('🔍', 'نتیجه جستجو'), hint(`«${e(query)}» · ${fa(customers.length)} مشتری`))
+    : sections(heading('🔍', 'نتیجه جستجو'), `مشتری‌ای با «${e(query)}» پیدا نشد.`),
+  keyboard: inline(
+    ...customers.map((c) => [button(customerLabel(c), A.customer(c.id))]),
+    [button('🔍 جستجوی دوباره', A.findCustomer), button('🔙 لیست مشتریان', A.customers)],
+  ),
+});
+
+export const CUSTOMER_SEARCH_PROMPT = sections(
+  heading('🔍', 'جستجوی مشتری'),
+  'یکی از این‌ها را بفرستید:',
+  quote('👤 نام\n🔗 @یوزرنیم\n📱 شماره موبایل\n🧾 کد رهگیری سفارش\n🆔 شناسه عددی تلگرام'),
+);
+
+export const customerView = (
+  c: CustomerSummary,
+  contact: { phone_number: string; address: string } | null,
+  orders: Order[],
+  page: number,
+  isAdmin: boolean,
+): View => ({
+  text: sections(
+    `👤 <b>${e(c.name) || hint('بدون نام')}</b>${c.username ? `  @${e(c.username)}` : ''}`,
+    quote(
+      `🆔 شناسه: <code>${c.chat_id}</code>\n` +
+        `🗓 عضویت: ${formatPersianDate(c.created_at)}` +
+        (contact ? `\n📱 موبایل: <code>${e(contact.phone_number)}</code>\n📍 آدرس: ${e(contact.address)}` : ''),
+    ),
+    `📊 <b>خلاصه خرید</b>\n` +
+      quote(
+        `🧾 سفارش‌ها: <b>${fa(c.orders_count)}</b>\n` +
+          `🟡 منتظر تایید: <b>${fa(c.awaiting_review)}</b>\n` +
+          `💰 مجموع خرید تاییدشده: <b>${toman(c.total_spent)}</b>`,
+      ),
+    `📌 وضعیت: ${c.status === 'disable' ? '🚫 <b>مسدود</b>' : '🟢 فعال'}` + (isAdmin ? `  ${hint('(ادمین)')}` : ''),
+    c.orders_count ? `👇 سفارش‌های این مشتری:\n${STATUS_LEGEND}` : hint('این مشتری هنوز سفارشی ثبت نکرده است.'),
+  ),
+  keyboard: inline(
+    ...orders.map((o) => [orderButton(o)]),
+    ...pager(page, pageCount(c.orders_count), (p) => A.customer(c.id, p)),
+    [
+      button('✉️ پیام', A.messageCustomer(c.id)),
+      ...(isAdmin
+        ? []
+        : [
+            c.status === 'disable'
+              ? button('✅ رفع مسدودی', A.toggleCustomerBlock(c.id), 'success')
+              : button('🚫 مسدود کردن', A.toggleCustomerBlock(c.id), 'danger'),
+          ]),
+    ],
+    backRow(A.customers, '🔙 لیست مشتریان'),
+  ),
+});
 
 const ACTION_BUTTONS: Record<AdminOrderAction, [string, ButtonStyle]> = {
   approve: ['✅ تایید سفارش', 'success'],
@@ -214,13 +307,18 @@ export const orderView = ({ order, details, lines }: FullOrder, title = heading(
     photo: details?.receipt_file_id ?? undefined,
     keyboard: inline(
       ...(actions.length ? [actions] : []),
-      [button('✉️ پیام به خریدار', A.contactBuyer(order.id))],
+      [button('👤 مشتری', A.customer(order.user_id)), button('✉️ پیام به خریدار', A.contactBuyer(order.id))],
       backRow(A.orders, '🔙 لیست سفارشات'),
     ),
   };
 };
 
-export const dialogOpened = (buyerChatId: number): View => ({
-  text: sections(heading('✉️', 'گفتگو با خریدار'), 'پیام‌تان را بفرستید؛ <b>متن</b> یا <b>عکس با کپشن</b>.', CANCEL_HINT),
+export const dialogOpened = (buyerChatId: number, name: string): View => ({
+  text: sections(
+    heading('✉️', name ? `گفتگو با ${e(name)}` : 'گفتگو با مشتری'),
+    'پیام‌تان را بفرستید؛ <b>متن</b> یا <b>عکس با کپشن</b>.',
+    hint('پاسخ‌های مشتری تا پایان گفتگو برای شما فرستاده می‌شود.'),
+    CANCEL_HINT,
+  ),
   keyboard: inline([button('🔚 پایان گفتگو', A.closeDialog(buyerChatId), 'danger')], toAdminRoot()),
 });

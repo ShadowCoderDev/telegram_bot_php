@@ -79,8 +79,8 @@ export class TelegramClient {
     return this.call('deleteMessage', { chat_id: chatId, message_id: messageId });
   }
 
-  answerCallbackQuery(id: string, text?: string) {
-    return this.call('answerCallbackQuery', { callback_query_id: id, text });
+  answerCallbackQuery(id: string, text?: string, showAlert = false) {
+    return this.call('answerCallbackQuery', { callback_query_id: id, text, show_alert: showAlert });
   }
 
   setWebhook(url: string, secretToken: string) {

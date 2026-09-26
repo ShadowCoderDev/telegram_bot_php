@@ -1,4 +1,4 @@
-import type { Category, Dialog, Faq, Order, OrderDetails, OrderLine, OrderStatus, Product, Session, Toggle, UserRow } from './models';
+import type { Category, CustomerSummary, Dialog, Faq, Order, OrderDetails, OrderLine, OrderStatus, Product, Session, Toggle, UserRow } from './models';
 
 /*
  * One small class per aggregate. Every query is a prepared statement with bound parameters –
@@ -19,18 +19,71 @@ abstract class Repository {
   }
 }
 
+const CUSTOMER_STATS = `
+  (SELECT count(*) FROM orders o WHERE o.user_id = u.id AND o.status NOT IN ('pending', 'cancel')) AS orders_count,
+  (SELECT COALESCE(SUM(oi.price * oi.quantity), 0) FROM orders o JOIN order_items oi ON oi.order_id = o.id
+     WHERE o.user_id = u.id AND o.status IN ('approved', 'sending')) AS total_spent,
+  (SELECT count(*) FROM orders o WHERE o.user_id = u.id AND o.status = 'payed') AS awaiting_review,
+  COALESCE((SELECT MAX(o.time) FROM orders o WHERE o.user_id = u.id AND o.status NOT IN ('pending', 'cancel')), u.created_at) AS last_activity`;
+
+/** Escapes LIKE wildcards so a search for "50%" matches literally. */
+const likeTerm = (s: string) => `%${s.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+
 export class UserRepository extends Repository {
   findByChatId(chatId: number) {
     return this.first<UserRow>('SELECT * FROM users WHERE chat_id = ?', chatId);
   }
+  find(id: number) {
+    return this.first<UserRow>('SELECT * FROM users WHERE id = ?', id);
+  }
   /** Insert-or-refresh; returns the row. */
-  async upsert(chatId: number, name: string): Promise<UserRow> {
+  async upsert(chatId: number, name: string, username = ''): Promise<UserRow> {
     await this.run(
-      'INSERT INTO users (chat_id, name) VALUES (?, ?) ON CONFLICT(chat_id) DO UPDATE SET name = excluded.name',
+      `INSERT INTO users (chat_id, name, username) VALUES (?, ?, ?)
+       ON CONFLICT(chat_id) DO UPDATE SET name = excluded.name, username = excluded.username`,
       chatId,
       name,
+      username,
     );
     return (await this.findByChatId(chatId))!;
+  }
+  setStatus(id: number, status: Toggle) {
+    return this.run('UPDATE users SET status = ? WHERE id = ?', status, id);
+  }
+  customer(id: number) {
+    return this.first<CustomerSummary>(`SELECT u.*, ${CUSTOMER_STATS} FROM users u WHERE u.id = ?`, id);
+  }
+  /** Customers, most recently active first. */
+  customersPage(limit: number, offset: number) {
+    return this.all<CustomerSummary>(
+      `SELECT u.*, ${CUSTOMER_STATS} FROM users u ORDER BY last_activity DESC, u.id DESC LIMIT ? OFFSET ?`,
+      limit,
+      offset,
+    );
+  }
+  /** Finds customers by name, @username, chat id, phone number or order tracking code. */
+  searchCustomers(query: string, limit = 20) {
+    const q = query.trim().replace(/^@/, '');
+    const numeric = /^\d+$/.test(q) ? Number(q) : -1;
+    return this.all<CustomerSummary>(
+      `SELECT u.*, ${CUSTOMER_STATS} FROM users u
+        WHERE u.name LIKE ?1 ESCAPE '\\' OR u.username LIKE ?1 ESCAPE '\\' OR u.chat_id = ?2
+           OR EXISTS (SELECT 1 FROM orders o LEFT JOIN order_details od ON od.order_id = o.id
+                       WHERE o.user_id = u.id AND (o.track_id = ?3 COLLATE NOCASE OR od.phone_number LIKE ?1 ESCAPE '\\'))
+        ORDER BY last_activity DESC LIMIT ?4`,
+      likeTerm(q),
+      numeric,
+      q,
+      limit,
+    );
+  }
+  /** Latest shipping details the customer entered, for the customer page. */
+  lastContact(userId: number) {
+    return this.first<{ phone_number: string; address: string }>(
+      `SELECT od.phone_number, od.address FROM order_details od JOIN orders o ON o.id = od.order_id
+        WHERE o.user_id = ? ORDER BY o.id DESC LIMIT 1`,
+      userId,
+    );
   }
   async count(): Promise<number> {
     return (await this.first<{ n: number }>('SELECT count(*) AS n FROM users'))!.n;
@@ -62,6 +115,9 @@ export class CategoryRepository extends Repository {
 }
 
 export type ProductDraft = Omit<Product, 'id' | 'status'>;
+
+const VISIBLE_JOIN = 'LEFT JOIN categories c ON c.id = p.category_id';
+const VISIBLE = "p.status = 'enable' AND (p.category_id IS NULL OR c.status = 'enable')";
 /** A product image is either an uploaded photo or a link; setting one clears the other. */
 export type ProductImage = Pick<Product, 'image_url' | 'image_file_id'>;
 export const EDITABLE_PRODUCT_FIELDS = ['title', 'description', 'price', 'author', 'image_url', 'inventory'] as const;
@@ -71,11 +127,15 @@ export class ProductRepository extends Repository {
   find(id: number) {
     return this.first<Product>('SELECT * FROM products WHERE id = ?', id);
   }
-  listByCategory(categoryId: number) {
-    return this.all<Product>("SELECT * FROM products WHERE category_id = ? AND status = 'enable' ORDER BY id", categoryId);
+  /** A product customers may see and buy: enabled, in an enabled category (or none). */
+  findVisible(id: number) {
+    return this.first<Product>(`SELECT p.* FROM products p ${VISIBLE_JOIN} WHERE p.id = ? AND ${VISIBLE}`, id);
   }
-  listAll() {
-    return this.all<Product>('SELECT * FROM products ORDER BY id DESC');
+  listByCategory(categoryId: number) {
+    return this.all<Product>(`SELECT p.* FROM products p ${VISIBLE_JOIN} WHERE p.category_id = ? AND ${VISIBLE} ORDER BY p.id`, categoryId);
+  }
+  listPage(limit: number, offset: number) {
+    return this.all<Product>('SELECT * FROM products ORDER BY id DESC LIMIT ? OFFSET ?', limit, offset);
   }
   async create(p: ProductDraft): Promise<number> {
     const r = await this.run(
@@ -97,6 +157,8 @@ export class ProductRepository extends Repository {
   }
 }
 
+const PLACED = "status NOT IN ('pending', 'cancel')";
+
 export class OrderRepository extends Repository {
   find(id: number) {
     return this.first<Order>('SELECT * FROM orders WHERE id = ?', id);
@@ -115,8 +177,26 @@ export class OrderRepository extends Repository {
   recentForUser(userId: number, limit = 5) {
     return this.all<Order>("SELECT * FROM orders WHERE user_id = ? AND status NOT IN ('pending', 'cancel') ORDER BY id DESC LIMIT ?", userId, limit);
   }
-  recentNonPending(limit = 50) {
-    return this.all<Order>("SELECT * FROM orders WHERE status NOT IN ('pending', 'cancel') ORDER BY id DESC LIMIT ?", limit);
+  placedPage(limit: number, offset: number, userId?: number) {
+    return userId === undefined
+      ? this.all<Order>(`SELECT * FROM orders WHERE ${PLACED} ORDER BY id DESC LIMIT ? OFFSET ?`, limit, offset)
+      : this.all<Order>(`SELECT * FROM orders WHERE ${PLACED} AND user_id = ? ORDER BY id DESC LIMIT ? OFFSET ?`, userId, limit, offset);
+  }
+  async countPlaced(userId?: number): Promise<number> {
+    const r =
+      userId === undefined
+        ? await this.first<{ n: number }>(`SELECT count(*) AS n FROM orders WHERE ${PLACED}`)
+        : await this.first<{ n: number }>(`SELECT count(*) AS n FROM orders WHERE ${PLACED} AND user_id = ?`, userId);
+    return r!.n;
+  }
+  /** Paid orders still waiting for an admin – capped per customer to stop receipt spam. */
+  async countAwaitingReview(userId: number): Promise<number> {
+    return (await this.first<{ n: number }>("SELECT count(*) AS n FROM orders WHERE user_id = ? AND status = 'payed'", userId))!.n;
+  }
+  /** The order a receipt photo was already used for, if any. */
+  async orderUsingReceipt(uniqueId: string): Promise<number | null> {
+    const r = await this.first<{ order_id: number }>('SELECT order_id FROM order_details WHERE receipt_unique_id = ?', uniqueId);
+    return r?.order_id ?? null;
   }
 
   /**
@@ -155,8 +235,9 @@ export class OrderRepository extends Repository {
       `SELECT oi.id AS item_id, oi.product_id, oi.quantity,
               COALESCE(oi.product_title, p.title) AS title,
               COALESCE(oi.price, p.price)         AS price,
-              COALESCE(p.inventory, 0)            AS inventory
-         FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
+              COALESCE(p.inventory, 0)            AS inventory,
+              COALESCE(${VISIBLE}, 0)            AS available
+         FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id ${VISIBLE_JOIN}
         WHERE oi.order_id = ? ORDER BY oi.id`,
       orderId,
     );
@@ -167,7 +248,7 @@ export class OrderRepository extends Repository {
     if (!orderIds.length) return out;
     const rows = await this.all<OrderLine & { order_id: number }>(
       `SELECT oi.order_id, oi.id AS item_id, oi.product_id, oi.quantity,
-              COALESCE(oi.product_title, p.title) AS title, COALESCE(oi.price, p.price) AS price, 0 AS inventory
+              COALESCE(oi.product_title, p.title) AS title, COALESCE(oi.price, p.price) AS price, 0 AS inventory, 1 AS available
          FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
         WHERE oi.order_id IN (${orderIds.map(() => '?').join(',')}) ORDER BY oi.id`,
       ...orderIds,
@@ -203,31 +284,41 @@ export class OrderRepository extends Repository {
    * Payment submitted: store details and mark as payed – atomically. Lines are already price-locked;
    * the snapshot below only fills a line that somehow is not (it never overwrites a locked price).
    */
-  async markPaid(d: OrderDetails): Promise<void> {
-    await this.db.batch([
-      this.db
-        .prepare(
-          `INSERT INTO order_details (order_id, first_name, last_name, address, phone_number, receipt_file_id, receipt_r2_key)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .bind(d.order_id, d.first_name, d.last_name, d.address, d.phone_number, d.receipt_file_id, d.receipt_r2_key),
-      this.db
-        .prepare(
-          `UPDATE order_items SET
-             price         = (SELECT price FROM products WHERE products.id = order_items.product_id),
-             product_title = (SELECT title FROM products WHERE products.id = order_items.product_id)
-           WHERE order_id = ? AND price IS NULL`,
-        )
-        .bind(d.order_id),
-      this.db.prepare("UPDATE orders SET status = 'payed' WHERE id = ? AND status = 'pending'").bind(d.order_id),
-    ]);
+  async markPaid(d: OrderDetails): Promise<'ok' | 'not_pending' | 'receipt_reused'> {
+    try {
+      const results = await this.db.batch([
+        this.db
+          .prepare(
+            `INSERT INTO order_details (order_id, first_name, last_name, address, phone_number, receipt_file_id, receipt_r2_key, receipt_unique_id)
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8 WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?1 AND status = 'pending')`,
+          )
+          .bind(d.order_id, d.first_name, d.last_name, d.address, d.phone_number, d.receipt_file_id, d.receipt_r2_key, d.receipt_unique_id),
+        this.db
+          .prepare(
+            `UPDATE order_items SET
+               price         = (SELECT price FROM products WHERE products.id = order_items.product_id),
+               product_title = (SELECT title FROM products WHERE products.id = order_items.product_id)
+             WHERE order_id = ? AND price IS NULL`,
+          )
+          .bind(d.order_id),
+        this.db.prepare("UPDATE orders SET status = 'payed' WHERE id = ? AND status = 'pending'").bind(d.order_id),
+      ]);
+      return results.at(-1)!.meta.changes > 0 ? 'ok' : 'not_pending';
+    } catch (err) {
+      // Same receipt photo as another order, or two photos at once (an album) racing for this order.
+      if (/receipt_unique_id/.test(String(err))) return 'receipt_reused';
+      if (/UNIQUE constraint failed: order_details\.order_id/.test(String(err))) return 'not_pending';
+      throw err;
+    }
   }
 
   /**
-   * Moves stock in or out for every line of the order together with the status change, in one
-   * transaction. Taking stock that isn't there violates CHECK(inventory >= 0) and rolls everything back.
+   * Moves the order from `from` to `to` and stock in or out for every line, in one transaction.
+   * Taking stock that isn't there violates CHECK(inventory >= 0) and rolls everything back.
    */
-  async changeStatusWithStock(orderId: number, status: OrderStatus, stock: 'take' | 'return' | 'keep'): Promise<void> {
+  async changeStatusWithStock(orderId: number, from: OrderStatus, to: OrderStatus, stock: 'take' | 'return' | 'keep'): Promise<boolean> {
+    // Every statement re-checks the order is still in `from`, so two admins (or a double click)
+    // acting at once can't both move stock: the second batch changes nothing and returns false.
     const stmts: D1PreparedStatement[] = [];
     if (stock !== 'keep') {
       const sign = stock === 'take' ? '-' : '+';
@@ -236,21 +327,23 @@ export class OrderRepository extends Repository {
           .prepare(
             `UPDATE products SET inventory = inventory ${sign}
                (SELECT quantity FROM order_items WHERE order_id = ?1 AND product_id = products.id)
-             WHERE id IN (SELECT product_id FROM order_items WHERE order_id = ?1)`,
+             WHERE id IN (SELECT product_id FROM order_items WHERE order_id = ?1)
+               AND EXISTS (SELECT 1 FROM orders WHERE id = ?1 AND status = ?2 AND stock_taken = ?3)`,
           )
-          .bind(orderId),
+          .bind(orderId, from, stock === 'take' ? 0 : 1),
       );
     }
     stmts.push(
       this.db
         .prepare(
-          `UPDATE orders SET status = ?2,
-             stock_taken = CASE ?3 WHEN 'take' THEN 1 WHEN 'return' THEN 0 ELSE stock_taken END
-           WHERE id = ?1`,
+          `UPDATE orders SET status = ?3,
+             stock_taken = CASE ?4 WHEN 'take' THEN 1 WHEN 'return' THEN 0 ELSE stock_taken END
+           WHERE id = ?1 AND status = ?2`,
         )
-        .bind(orderId, status, stock),
+        .bind(orderId, from, to, stock),
     );
-    await this.db.batch(stmts);
+    const results = await this.db.batch(stmts);
+    return results.at(-1)!.meta.changes > 0;
   }
 
   async stats(since: { day: number; month: number }) {
@@ -340,5 +433,21 @@ export class DialogRepository extends Repository {
   }
   close(buyerChatId: number) {
     return this.run('DELETE FROM dialogs WHERE buyer_chat_id = ?', buyerChatId);
+  }
+}
+
+/** Records every Telegram update once: retries are skipped and per-chat floods are throttled. */
+export class UpdateLogRepository extends Repository {
+  /** False when this update_id was already processed (Telegram redelivery). */
+  async firstTime(updateId: number, chatId: number): Promise<boolean> {
+    const r = await this.run('INSERT INTO processed_updates (update_id, chat_id) VALUES (?, ?) ON CONFLICT DO NOTHING', updateId, chatId);
+    return r.meta.changes > 0;
+  }
+  async recentCount(chatId: number, seconds: number): Promise<number> {
+    const r = await this.first<{ n: number }>('SELECT count(*) AS n FROM processed_updates WHERE chat_id = ? AND at >= unixepoch() - ?', chatId, seconds);
+    return r!.n;
+  }
+  prune(olderThanSeconds = 2 * 86400) {
+    return this.run('DELETE FROM processed_updates WHERE at < unixepoch() - ?', olderThanSeconds);
   }
 }

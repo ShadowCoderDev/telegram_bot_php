@@ -3,6 +3,7 @@ import type { Session } from '../db/models';
 import { clampQty, stockProblems } from '../services/CartService';
 import type { BotContext } from '../telegram/BotContext';
 import type { Router } from '../telegram/Router';
+import { LIMITS, MAX_AWAITING_REVIEW, charCount } from '../limits';
 import { escapeHtml } from '../utils/format';
 import { isIranMobile, toEnglishDigits } from '../utils/persian';
 import * as admin from '../views/admin';
@@ -19,16 +20,16 @@ const now = () => Math.floor(Date.now() / 1000);
 
 export function registerUserRoutes(router: Router, d: Deps): Router {
   const showHome = async (ctx: BotContext) => {
-    await d.user(ctx.chatId, ctx.firstName);
+    await d.user(ctx);
     await ctx.render(v.mainMenu(ctx.firstName));
   };
   const showShop = async (ctx: BotContext) => ctx.render(v.categoriesView(await d.categories.list(true)));
   const showCart = async (ctx: BotContext) => {
-    const cart = await d.cart.contents(await d.user(ctx.chatId, ctx.firstName));
+    const cart = await d.cart.contents(await d.user(ctx));
     await ctx.render(cart ? v.cartView(cart.lines) : v.emptyCart());
   };
   const showOrders = async (ctx: BotContext) => {
-    const user = await d.user(ctx.chatId, ctx.firstName);
+    const user = await d.user(ctx);
     const orders = await d.orders.recentForUser(user.id);
     await ctx.render(v.myOrdersView(orders, await d.orders.linesFor(orders.map((o) => o.id))));
   };
@@ -36,12 +37,12 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
   const showSupport = async (ctx: BotContext) => ctx.render(v.supportView(await d.settings.get('support', 'پشتیبانی تنظیم نشده')));
   const showHelp = async (ctx: BotContext) => ctx.render(v.helpView(await d.settings.get('help_text', 'راهنما هنوز تنظیم نشده است.')));
   const showProduct = async (ctx: BotContext, id: number, qty: number) => {
-    const product = await d.products.find(id);
-    await ctx.render(product?.status === 'enable' ? v.productCard(product, clampQty(qty)) : v.productNotFound());
+    const product = await d.products.findVisible(id);
+    await ctx.render(product ? v.productCard(product, clampQty(qty, product.inventory)) : v.productNotFound());
   };
   const removeItem = async (ctx: BotContext, itemId: number) => {
     const aborted = await abortCheckout(ctx.chatId, d);
-    const removed = await d.cart.removeItem(await d.user(ctx.chatId, ctx.firstName), itemId);
+    const removed = await d.cart.removeItem(await d.user(ctx), itemId);
     if (!removed) await ctx.reply({ text: '⚠️ این آیتم در سبد خرید شما نیست.' });
     if (aborted) await ctx.reply(v.checkoutPrompts.cancelledByCartChange());
     await showCart(ctx);
@@ -83,7 +84,8 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
       })
       .callback(/^cat:(\d+)$/, async (ctx, [id]) => {
         const [category, products] = await Promise.all([d.categories.find(Number(id)), d.products.listByCategory(Number(id))]);
-        await ctx.render(v.categoryProductsView(category, products));
+        // A disabled category is hidden even when reached through an old button.
+        await ctx.render(category?.status === 'enable' ? v.categoryProductsView(category, products) : v.categoriesView(await d.categories.list(true)));
       })
       .callback(/^prod:(\d+)$/, (ctx, [id]) => showProduct(ctx, Number(id), 1))
       .callback(/^qty:(\d+):(-?\d+)$/, (ctx, [id, qty]) => showProduct(ctx, Number(id), Number(qty)))
@@ -91,7 +93,7 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
       /* ----- cart (every change cancels a checkout in progress, so a shown amount can't go stale) ----- */
       .callback(/^add:(\d+):(\d+)$/, async (ctx, [id, rawQty]) => {
         const qty = clampQty(Number(rawQty));
-        const result = await d.cart.add(await d.user(ctx.chatId, ctx.firstName), Number(id), qty);
+        const result = await d.cart.add(await d.user(ctx), Number(id), qty);
         if (!result.ok) {
           return ctx.render(result.reason === 'not_found' ? v.productNotFound() : v.notEnoughStock(result.product, result.inCart, qty));
         }
@@ -103,15 +105,18 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
       .callback(/^cart:del:(\d+)$/, (ctx, [id]) => removeItem(ctx, Number(id)))
       .callback(CB.clearCart, async (ctx) => {
         await abortCheckout(ctx.chatId, d);
-        await d.cart.clear(await d.user(ctx.chatId, ctx.firstName));
+        await d.cart.clear(await d.user(ctx));
         await ctx.render({ text: sections(heading('🗑', 'سبد خرید خالی شد'), hint('هر وقت خواستید دوباره خرید کنید.')) });
         await ctx.reply(v.mainMenu(ctx.firstName));
       })
       .callback(CB.checkout, async (ctx) => {
-        const user = await d.user(ctx.chatId, ctx.firstName);
+        const user = await d.user(ctx);
         await abortCheckout(ctx.chatId, d); // restarting checkout never keeps an old lock
         const cart = await d.cart.contents(user);
         if (!cart) return ctx.render(v.emptyCart());
+        if ((await d.orders.countAwaitingReview(user.id)) >= MAX_AWAITING_REVIEW) {
+          return ctx.render(v.checkoutPrompts.tooManyAwaiting(MAX_AWAITING_REVIEW));
+        }
         const problems = stockProblems(cart.lines);
         if (problems.length) return ctx.render(v.stockProblemsView(problems));
         const data: v.CheckoutData = { orderId: cart.order.id };
@@ -184,11 +189,14 @@ async function checkoutStep(ctx: BotContext, s: Session<v.CheckoutData>, d: Deps
     case 'name': {
       const parts = text?.split(/\s+/) ?? [];
       if (parts.length < 2 || text!.startsWith('/')) return ctx.reply(v.checkoutPrompts.badName());
+      if (charCount(text!) > LIMITS.name) return ctx.reply(v.checkoutPrompts.tooLong(LIMITS.name));
       await advance('address', { ...s.data, firstName: parts[0], lastName: parts.slice(1).join(' ') });
       return ctx.reply(v.checkoutPrompts.address());
     }
     case 'address': {
       if (!text || text.startsWith('/')) return ctx.reply(v.checkoutPrompts.address());
+      if (charCount(text) > LIMITS.address) return ctx.reply(v.checkoutPrompts.tooLong(LIMITS.address));
+      if (charCount(text) < LIMITS.addressMin) return ctx.reply(v.checkoutPrompts.addressTooShort());
       await advance('phone', { ...s.data, address: text });
       return ctx.reply(v.checkoutPrompts.phone());
     }
@@ -198,14 +206,18 @@ async function checkoutStep(ctx: BotContext, s: Session<v.CheckoutData>, d: Deps
       return showPayment(ctx, d, { ...s.data, phone });
     }
     case 'receipt': {
-      const fileId = ctx.imageFileId;
-      if (!fileId) return ctx.reply(v.checkoutPrompts.needImage());
+      const image = ctx.image;
+      if (!image) return ctx.reply(v.checkoutPrompts.needImage());
+      const fileId = image.fileId;
 
       const order = await d.orders.find(s.data.orderId);
       if (order?.status !== 'pending') {
         await d.sessions.clear(ctx.chatId);
-        return ctx.reply(v.emptyCart());
+        // e.g. a second photo of an album arriving after the first was accepted
+        return ctx.reply(order?.status === 'payed' ? v.checkoutPrompts.alreadyReceived() : v.emptyCart());
       }
+      // One receipt can back only one order (checked again atomically by a UNIQUE index below).
+      if ((await d.orders.orderUsingReceipt(image.uniqueId)) !== null) return ctx.reply(v.checkoutPrompts.receiptReused());
       if (!(await lockStillValid(d, s.data))) {
         await ctx.reply(v.checkoutPrompts.pricesChanged());
         return showPayment(ctx, d, s.data);
@@ -218,7 +230,7 @@ async function checkoutStep(ctx: BotContext, s: Session<v.CheckoutData>, d: Deps
             return null;
           })
         : null;
-      await d.orders.markPaid({
+      const paid = await d.orders.markPaid({
         order_id: s.data.orderId,
         first_name: s.data.firstName ?? '',
         last_name: s.data.lastName ?? '',
@@ -226,7 +238,10 @@ async function checkoutStep(ctx: BotContext, s: Session<v.CheckoutData>, d: Deps
         phone_number: s.data.phone ?? '',
         receipt_file_id: fileId,
         receipt_r2_key: r2Key,
+        receipt_unique_id: image.uniqueId,
       });
+      if (paid === 'receipt_reused') return ctx.reply(v.checkoutPrompts.receiptReused());
+      if (paid === 'not_pending') return ctx.reply(v.checkoutPrompts.alreadyReceived());
       await d.sessions.clear(ctx.chatId);
 
       const full = (await d.orderService.load(s.data.orderId))!;
@@ -239,7 +254,10 @@ async function checkoutStep(ctx: BotContext, s: Session<v.CheckoutData>, d: Deps
 }
 
 async function forwardBuyerReply(ctx: BotContext, d: Deps, adminChatId: number, orderId: number): Promise<void> {
-  const header = `📥 <b>پاسخ خریدار</b> ${hint(`(سفارش #${orderId})`)}\n\n`;
+  const user = await d.users.findByChatId(ctx.chatId);
+  const who = user ? `${escapeHtml(user.name)}${user.username ? ` @${user.username}` : ''}` : String(ctx.chatId);
+  const header = `📥 <b>پیام مشتری</b> ${hint(`${who}${orderId ? ` · سفارش #${orderId}` : ''}`)}\n\n`;
+  if (charCount(ctx.text ?? ctx.caption ?? '') > LIMITS.dialog) return ctx.reply(v.checkoutPrompts.tooLong(LIMITS.dialog));
   const photo = ctx.update.message?.photo?.at(-1)?.file_id;
   if (photo) await ctx.sendTo(adminChatId, { photo, text: header + quote(escapeHtml(ctx.caption) || '📷') });
   else if (ctx.text) await ctx.sendTo(adminChatId, { text: header + quote(escapeHtml(ctx.text)) });
