@@ -146,10 +146,12 @@ async function checkoutStep(ctx: BotContext, s: Session<v.CheckoutData>, d: Deps
       if (!fileId) return ctx.reply(v.checkoutPrompts.needImage());
 
       // Archive to R2; the Telegram file_id alone is enough to show the receipt, so this is best-effort.
-      const r2Key = await d.files.saveTelegramFile(fileId, 'receipts').catch((err) => {
-        console.error('receipt archive failed', err);
-        return null;
-      });
+      const r2Key = d.files
+        ? await d.files.saveTelegramFile(fileId, 'receipts').catch((err) => {
+            console.error('receipt archive failed', err);
+            return null;
+          })
+        : null;
       await d.orders.markPaid({
         order_id: s.data.orderId,
         first_name: s.data.firstName ?? '',

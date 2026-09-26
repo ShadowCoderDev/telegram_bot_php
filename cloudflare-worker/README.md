@@ -106,29 +106,53 @@ router
 7. متن‌هایی که کاربر وارد می‌کند (آدرس، نام، سوال و ...) escape نمی‌شدند و HTML تلگرام را خراب می‌کردند.
 8. کپشن عکس بیشتر از ۱۰۲۴ کاراکتر باعث خطا در ارسال سفارش به ادمین می‌شد.
 
-## راه‌اندازی
+## دیپلوی
+
+همه‌ی کارها را `scripts/deploy.mjs` انجام می‌دهد و اجرای دوباره‌اش هم بی‌خطر است:
+دیتابیس D1 را بر اساس اسم پیدا می‌کند یا اگر نبود می‌سازد (نیازی به کپی کردن database_id نیست)،
+باکت R2 را می‌سازد یا اگر R2 فعال نباشد بدون آن ادامه می‌دهد، migrationها را اجرا می‌کند،
+Worker را همراه با secretها دیپلوی می‌کند و در آخر وبهوک تلگرام را تنظیم می‌کند.
+
+> فایل تنظیمات این پروژه `wrangler.jsonc` است. این همان `wrangler.toml` است، فقط با فرمت JSON که Cloudflare برای پروژه‌های جدید پیشنهاد می‌کند.
+
+### پیش‌نیاز (فقط یک بار)
+
+1. در [dash.cloudflare.com](https://dash.cloudflare.com) حساب بسازید (پلن رایگان کافی است).
+2. یک بار وارد بخش **Workers & Pages** شوید تا زیردامنه‌ی `workers.dev` شما ساخته شود.
+3. در @BotFather توکن ربات را **عوض کنید** (`/revoke`)، چون توکن قبلی در تاریخچه‌ی گیت مانده است.
+4. *(اختیاری)* R2: فعال کردنش در داشبورد نیاز به ثبت روش پرداخت دارد، حتی برای پلن رایگان. بدون R2 هم ربات کامل کار می‌کند؛ فقط عکس محصول باید به شکل لینک (URL) داده شود.
+
+### روش ۱: دیپلوی خودکار با GitHub (پیشنهادی)
+
+بعد از این تنظیمات، هر push روی `master` اول تست‌ها را اجرا می‌کند و بعد ربات را دیپلوی می‌کند.
+
+1. **ساخت API Token در Cloudflare:** بروید به My Profile ← API Tokens ← Create Token، قالب **Edit Cloudflare Workers** را انتخاب کنید،
+   با **+ Add more** دسترسی `Account · D1 · Edit` را هم اضافه کنید و توکن را بسازید.
+2. **Account ID:** در صفحه‌ی **Workers & Pages** ستون سمت راست (یا بخشی از آدرس داشبورد) است.
+3. در GitHub بروید به **Settings ← Secrets and variables ← Actions** و این‌ها را در تب **Secrets** اضافه کنید:
+
+   | نام | مقدار |
+   |---|---|
+   | `CLOUDFLARE_API_TOKEN` | توکن مرحله‌ی ۱ |
+   | `CLOUDFLARE_ACCOUNT_ID` | Account ID |
+   | `BOT_TOKEN` | توکن جدید ربات |
+   | `WEBHOOK_SECRET` | *(اختیاری)* اگر خالی بماند در هر دیپلوی خودکار ساخته می‌شود |
+
+   *(اختیاری)* در تب **Variables** مقدار `ADMIN_CHAT_IDS` را وارد کنید (آیدی عددی ادمین‌ها، جدا شده با کاما).
+4. بروید به تب **Actions ← Cloudflare Worker ← Run workflow**، یا فقط یک commit روی `master` push کنید.
+5. در لاگ مرحله‌ی `npm run deploy` آدرس Worker و لینک ربات چاپ می‌شود. در تلگرام `/start` بفرستید.
+
+### روش ۲: با یک دستور از کامپیوتر خودتان
 
 ```bash
 cd cloudflare-worker
 npm install
-
-# ۱) ساخت منابع
-npx wrangler d1 create shop            # database_id را در wrangler.jsonc بگذارید
-npx wrangler r2 bucket create shop-files
-
-# ۲) ساخت جدول‌ها
-npm run db:migrate:remote
-
-# ۳) secretها
-npx wrangler secret put BOT_TOKEN       # توکن جدید از BotFather
-npx wrangler secret put WEBHOOK_SECRET  # یک رشته‌ی تصادفی طولانی
-#    ADMIN_CHAT_IDS را در wrangler.jsonc تنظیم کنید (با کاما جدا می‌شوند)
-
-# ۴) دیپلوی و ثبت وبهوک
 npm run deploy
-curl -X POST https://telegram-shop-bot.<subdomain>.workers.dev/setup-webhook \
-     -H "Authorization: Bearer <WEBHOOK_SECRET>"
 ```
+
+مرورگر برای ورود به Cloudflare باز می‌شود و بعد توکن ربات پرسیده می‌شود. بقیه‌ی مراحل خودکار است.
+برای اجرای بدون سؤال، مقادیر را به‌صورت متغیر محیطی بدهید: `BOT_TOKEN=... ADMIN_CHAT_IDS=123,456 npm run deploy`.
+اگر به‌جای `workers.dev` از دامنه‌ی شخصی استفاده می‌کنید، `WORKER_URL=https://bot.example.com` را هم اضافه کنید.
 
 ### توسعه‌ی محلی
 
@@ -154,5 +178,5 @@ npm run test:e2e  # Worker واقعی در wrangler dev با D1/R2 محلی و �
 ساختار جدول‌ها در `migrations/0001_init.sql` است. نام چند جدول و ستون عوض شده است
 (`orders_item` ← `order_items`، `trackId` ← `track_id`، `receipt_image_url` ← `receipt_file_id`).
 داده‌ها را با `mysqldump --no-create-info --compatible=ansi` خروجی بگیرید، این نام‌ها را اصلاح کنید و با
-`wrangler d1 execute shop --remote --file dump.sql` وارد کنید. برای رسیدهای قدیمی که `file_id` ندارند
+`npx wrangler d1 execute shop --remote --file dump.sql -c wrangler.deploy.json` وارد کنید. فایل `wrangler.deploy.json` بعد از اولین `npm run deploy` ساخته می‌شود و شناسه‌ی واقعی دیتابیس را دارد. برای رسیدهای قدیمی که `file_id` ندارند
 می‌توانید فایل را در R2 آپلود کنید و کلید آن را در `receipt_r2_key` بگذارید.
