@@ -111,14 +111,45 @@ export class OrderRepository extends Repository {
   setStatus(id: number, status: OrderStatus) {
     return this.run('UPDATE orders SET status = ? WHERE id = ?', status, id);
   }
+  /** Placed orders only: open carts ('pending') and emptied carts ('cancel') are not orders. */
   recentForUser(userId: number, limit = 5) {
-    return this.all<Order>("SELECT * FROM orders WHERE user_id = ? AND status != 'pending' ORDER BY id DESC LIMIT ?", userId, limit);
+    return this.all<Order>("SELECT * FROM orders WHERE user_id = ? AND status NOT IN ('pending', 'cancel') ORDER BY id DESC LIMIT ?", userId, limit);
   }
   recentNonPending(limit = 50) {
-    return this.all<Order>("SELECT * FROM orders WHERE status != 'pending' ORDER BY id DESC LIMIT ?", limit);
+    return this.all<Order>("SELECT * FROM orders WHERE status NOT IN ('pending', 'cancel') ORDER BY id DESC LIMIT ?", limit);
   }
 
-  /** Lines of an order. Before payment the live product price/title is used; after, the snapshot. */
+  /**
+   * Price lock: copies the current price/title into every line of an open cart. Done when the
+   * customer is shown the amount to pay, so the amount they pay is the amount the order records.
+   */
+  lockPrices(orderId: number) {
+    return this.run(
+      `UPDATE order_items SET
+         price         = (SELECT price FROM products WHERE products.id = order_items.product_id),
+         product_title = (SELECT title FROM products WHERE products.id = order_items.product_id)
+       WHERE order_id = ? AND order_id IN (SELECT id FROM orders WHERE status = 'pending')`,
+      orderId,
+    );
+  }
+  /** Releases a lock (checkout abandoned or cart changed) so the cart follows live prices again. */
+  unlockPrices(orderId: number) {
+    return this.run(
+      `UPDATE order_items SET price = NULL, product_title = NULL
+       WHERE order_id = ? AND order_id IN (SELECT id FROM orders WHERE status = 'pending')`,
+      orderId,
+    );
+  }
+  /** Sum of the locked lines, plus how many lines are not locked (0 means the whole cart is locked). */
+  async lockedTotal(orderId: number): Promise<{ total: number; unlocked: number; lines: number }> {
+    const r = await this.first<{ total: number; unlocked: number | null; lines: number }>(
+      'SELECT COALESCE(SUM(price * quantity), 0) AS total, SUM(price IS NULL) AS unlocked, COUNT(*) AS lines FROM order_items WHERE order_id = ?',
+      orderId,
+    );
+    return { total: r!.total, unlocked: r!.unlocked ?? 0, lines: r!.lines };
+  }
+
+  /** Lines of an order. Unlocked lines show the live product price/title; locked or paid lines the snapshot. */
   lines(orderId: number) {
     return this.all<OrderLine>(
       `SELECT oi.id AS item_id, oi.product_id, oi.quantity,
@@ -169,7 +200,8 @@ export class OrderRepository extends Repository {
   }
 
   /**
-   * Payment submitted: store details, freeze prices/titles and mark as payed – atomically.
+   * Payment submitted: store details and mark as payed – atomically. Lines are already price-locked;
+   * the snapshot below only fills a line that somehow is not (it never overwrites a locked price).
    */
   async markPaid(d: OrderDetails): Promise<void> {
     await this.db.batch([

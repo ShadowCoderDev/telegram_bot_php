@@ -94,8 +94,8 @@ describe('keyboard & views', () => {
       myOrdersView([{ id: 1, user_id: 1, user_chat_id: 1, track_id: 'T', status: 'payed', stock_taken: 0, time: 0 }], new Map([[1, [line]]])).text,
     ]) {
       expect(text).toContain('💰 قیمت واحد: 7,800,000 تومان\n');
-      expect(text).toContain('🔢 تعداد: 3\n');
-      expect(text).toContain('جمع کل: 23,400,000 تومان');
+      expect(text).toContain('🔢 تعداد: ۳\n');
+      expect(text).toMatch(/(جمع کل|مبلغ قابل پرداخت): 23,400,000 تومان/);
     }
   });
   it('parses admin ids', () => {

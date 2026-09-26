@@ -43,10 +43,14 @@ export interface Update {
   callback_query?: CallbackQuery;
 }
 
+/** Button colour (Bot API 9.4+); older apps ignore it and show the default style. */
+export type ButtonStyle = 'primary' | 'success' | 'danger';
+
 export interface InlineKeyboardButton {
   text: string;
   callback_data?: string;
   url?: string;
+  style?: ButtonStyle;
 }
 
 export interface InlineKeyboardMarkup {

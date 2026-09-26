@@ -3,63 +3,61 @@ import type { SettingKey } from '../db/repositories';
 import type { FullOrder } from '../services/OrderService';
 import { ALLOWED_ACTIONS, STATUS_FA, type AdminOrderAction } from '../services/orderStatus';
 import { backRow, button, inline, replyKeyboard } from '../telegram/keyboard';
-import type { InlineKeyboardButton, View } from '../telegram/types';
+import type { ButtonStyle, InlineKeyboardButton, View } from '../telegram/types';
 import { escapeHtml as e, money, truncate } from '../utils/format';
 import { formatPersianDate } from '../utils/persian';
 import { CB } from './callbacks';
-import { itemsWithTotal } from './common';
+import { CANCEL_HINT, expandable, fa, heading, hint, itemsWithTotal, progress, quote, sections, toman } from './common';
 
 const A = CB.admin;
-const HR = '─────────────────';
-const toAdminRoot = () => backRow(A.root);
-const statusIcon = (s: string) => (s === 'enable' ? '✅' : '⛔');
-const CANCEL_HINT = '\n(برای لغو /cancel)';
+const toAdminRoot = () => backRow(A.root, '🔙 پنل مدیریت');
+const statusIcon = (s: string) => (s === 'enable' ? '🟢' : '🔴');
 
 export const ADMIN_HOME = 'پنل ادمین 🏠';
 
 export const adminReplyKeyboard = (): View => ({
-  text: 'از منوی پایین برای دسترسی سریع استفاده کنید 👇',
+  text: hint('👇 از منوی پایین هم می‌توانید سریع به پنل برگردید.'),
   keyboard: replyKeyboard([[ADMIN_HOME]]),
 });
 
 export const adminRoot = (): View => ({
-  text: '🔐 <b>پنل مدیریت</b>\n\nیکی از گزینه‌ها را انتخاب کن:',
+  text: sections(heading('🔐', 'پنل مدیریت'), '👇 یکی از بخش‌ها را انتخاب کنید:'),
   keyboard: inline(
-    [button('❓ مدیریت سوالات متداول', A.faqs)],
-    [button('📊 آمار کلی', A.stats), button('🧾 مدیریت سفارشات', A.orders)],
-    [button('➕ افزودن محصول', A.addProduct), button('➕ افزودن دسته‌بندی', A.addCategory)],
-    [button('✏️ مدیریت محصولات', A.products), button('📂 مدیریت دسته‌بندی‌ها', A.categories)],
-    [button('🗑️ حذف دسته بندی', A.deleteCategories)],
-    [button('⚙️ تنظیمات ربات', A.settings)],
+    [button('🧾 سفارشات', A.orders, 'primary'), button('📊 آمار', A.stats)],
+    [button('➕ محصول جدید', A.addProduct, 'success'), button('➕ دسته‌بندی جدید', A.addCategory, 'success')],
+    [button('✏️ محصولات', A.products), button('📂 دسته‌بندی‌ها', A.categories)],
+    [button('❓ سوالات متداول', A.faqs), button('⚙️ تنظیمات', A.settings)],
+    [button('🗑 حذف دسته‌بندی', A.deleteCategories, 'danger')],
     [button('👀 نمایش منوی کاربر', CB.home)],
   ),
 });
 
 export const done = (text: string): View => ({ text, keyboard: inline(toAdminRoot()) });
-export const prompt = (text: string): View => ({ text: text + CANCEL_HINT });
+export const prompt = (text: string): View => ({ text: sections(text, CANCEL_HINT) });
+/** A step of a multi-step admin form, with a progress bar. */
+export const formStep = (title: string, step: number, total: number, body: string): View =>
+  prompt(sections(`${heading('📝', title)}\n${progress(step, total)}`, body));
 
 export const statsView = (s: { users: number; products: number; completed: number; daily: number; monthly: number }): View => ({
-  text:
-    '📊 <b>آمار کلی ربات:</b>\n\n' +
-    `👤 کاربران: <b>${s.users}</b>\n` +
-    `📦 محصولات: <b>${s.products}</b>\n` +
-    `✅ سفارشات موفق: <b>${s.completed}</b>\n${HR}\n` +
-    '💰 <b>عملکرد مالی:</b>\n\n' +
-    `☀️ درآمد امروز: <b>${money(s.daily)} تومان</b>\n` +
-    `🌙 درآمد این ماه: <b>${money(s.monthly)} تومان</b>\n`,
+  text: sections(
+    heading('📊', 'آمار فروشگاه'),
+    quote(`👥 کاربران: <b>${fa(s.users)}</b>\n📦 محصولات: <b>${fa(s.products)}</b>\n✅ سفارشات موفق: <b>${fa(s.completed)}</b>`),
+    `💰 <b>درآمد</b>\n` + quote(`☀️ امروز: <b>${toman(s.daily)}</b>\n🌙 این ماه: <b>${toman(s.monthly)}</b>`),
+    hint('سفارش‌های پرداخت‌شده، تاییدشده و ارسال‌شده حساب می‌شوند.'),
+  ),
   keyboard: inline(toAdminRoot()),
 });
 
 /* ---------- settings ---------- */
 
 export const SETTING_LABELS: Record<SettingKey, { button: string; prompt: string }> = {
-  help_text: { button: '📝 ویرایش متن راهنما', prompt: 'لطفاً متن جدید <b>راهنما</b> را ارسال کنید:' },
-  support: { button: '🗣️ ویرایش متن پشتیبانی', prompt: 'لطفاً متن جدید <b>پشتیبانی</b> را ارسال کنید:' },
-  bank_info: { button: '💳 ویرایش اطلاعات کارت', prompt: 'لطفاً اطلاعات جدید <b>شماره کارت</b> را ارسال کنید:' },
+  help_text: { button: '📝 متن راهنما', prompt: 'متن جدید <b>راهنما</b> را بفرستید:' },
+  support: { button: '🗣️ آیدی پشتیبانی', prompt: 'آیدی یا متن جدید <b>پشتیبانی</b> را بفرستید:' },
+  bank_info: { button: '💳 اطلاعات کارت', prompt: 'اطلاعات جدید <b>کارت بانکی</b> را بفرستید:' },
 };
 
 export const settingsMenu = (): View => ({
-  text: '⚙️ <b>تنظیمات ربات</b>\n\nکدام بخش را می‌خواهید ویرایش کنید؟',
+  text: sections(heading('⚙️', 'تنظیمات ربات'), '👇 کدام بخش را ویرایش می‌کنید؟'),
   keyboard: inline(
     ...(Object.keys(SETTING_LABELS) as SettingKey[]).map((k) => [button(SETTING_LABELS[k].button, A.editSetting(k))]),
     toAdminRoot(),
@@ -68,14 +66,14 @@ export const settingsMenu = (): View => ({
 
 /* ---------- FAQs & categories ---------- */
 
+const toggleButton = (status: string, data: string) =>
+  status === 'enable' ? button('🔴 غیرفعال کن', data, 'danger') : button('🟢 فعال کن', data, 'success');
+
 export const faqsManage = (faqs: Faq[]): View => ({
-  text: '❓ <b>مدیریت سوالات متداول</b>:',
+  text: sections(heading('❓', 'سوالات متداول'), hint('🟢 فعال   🔴 غیرفعال')),
   keyboard: inline(
-    [button('➕ افزودن سوال جدید', A.addFaq)],
-    ...faqs.map((f) => [
-      button(`${statusIcon(f.status)} ${truncate(f.question, 30)}`, CB.noop),
-      button(f.status === 'enable' ? 'غیرفعال‌سازی' : 'فعال‌سازی', A.toggleFaq(f.id)),
-    ]),
+    [button('➕ افزودن سوال جدید', A.addFaq, 'success')],
+    ...faqs.map((f) => [button(`${statusIcon(f.status)} ${truncate(f.question, 28)}`, CB.noop), toggleButton(f.status, A.toggleFaq(f.id))]),
     toAdminRoot(),
   ),
 });
@@ -83,42 +81,39 @@ export const faqsManage = (faqs: Faq[]): View => ({
 export const categoriesManage = (cats: Category[]): View =>
   cats.length
     ? {
-        text: '📂 <b>مدیریت دسته‌بندی‌ها</b>:',
+        text: sections(heading('📂', 'دسته‌بندی‌ها'), hint('🟢 فعال   🔴 غیرفعال')),
         keyboard: inline(
-          ...cats.map((c) => [
-            button(`${statusIcon(c.status)} ${c.icon} ${c.name}`, CB.noop),
-            button(c.status === 'enable' ? 'غیرفعال‌سازی ⛔' : 'فعال‌سازی ✅', A.toggleCategory(c.id)),
-          ]),
+          ...cats.map((c) => [button(`${statusIcon(c.status)} ${c.icon} ${c.name}`, CB.noop), toggleButton(c.status, A.toggleCategory(c.id))]),
           toAdminRoot(),
         ),
       }
-    : done('❌ دسته‌بندی‌ای وجود ندارد.');
+    : done(sections(heading('📂', 'دسته‌بندی‌ها'), 'هنوز دسته‌بندی‌ای ساخته نشده است.'));
 
 export const categoryDeleteList = (cats: Category[]): View =>
   cats.length
     ? {
-        text:
-          '🗑️ <b>حذف دسته‌بندی</b>\n\nکدام دسته‌بندی را می‌خواهید حذف کنید؟\n\n' +
-          '⚠️ <b>توجه:</b> فقط دسته‌بندی‌هایی که هیچ محصولی ندارند قابل حذف هستند.',
+        text: sections(
+          heading('🗑', 'حذف دسته‌بندی'),
+          '👇 دسته‌بندی مورد نظر را انتخاب کنید:',
+          hint('⚠️ فقط دسته‌بندی‌های بدون محصول قابل حذف هستند.'),
+        ),
         keyboard: inline(...cats.map((c) => [button(`${c.icon} ${c.name}`, A.deleteCategory(c.id))]), toAdminRoot()),
       }
-    : done('❌ هیچ دسته‌بندی برای حذف وجود ندارد.');
+    : done(sections(heading('🗑', 'حذف دسته‌بندی'), 'دسته‌بندی‌ای برای حذف وجود ندارد.'));
 
 export const categoryDeleteConfirm = (c: Category, hasProducts: boolean): View =>
   hasProducts
     ? {
-        text:
-          '🚫 <b>امکان حذف وجود ندارد!</b>\n\n' +
-          `دسته‌بندی «<b>${e(c.name)}</b>» قابل حذف نیست، زیرا هنوز محصولاتی در آن وجود دارد.\n\n` +
-          'ابتدا باید تمام محصولات این دسته‌بندی را به دسته‌بندی دیگری منتقل کنید.',
+        text: sections(
+          heading('🚫', 'امکان حذف وجود ندارد'),
+          quote(`${c.icon} <b>${e(c.name)}</b> هنوز محصول دارد.`),
+          hint('اول محصولات این دسته را به دسته‌ی دیگری منتقل کنید.'),
+        ),
         keyboard: inline(backRow(A.deleteCategories)),
       }
     : {
-        text: `❓ <b>آیا از حذف دسته‌بندی زیر اطمینان دارید؟</b>\n\n<b>${e(c.name)}</b>\n\nاین عمل غیرقابل بازگشت است.`,
-        keyboard: inline(
-          [button('✅ بله، حذف کن', A.deleteCategoryConfirm(c.id))],
-          [button('❌ خیر، منصرف شدم', A.deleteCategories)],
-        ),
+        text: sections(heading('⚠️', 'حذف دسته‌بندی'), quote(`${c.icon} <b>${e(c.name)}</b>`), hint('این کار قابل بازگشت نیست.')),
+        keyboard: inline([button('🗑 بله، حذف کن', A.deleteCategoryConfirm(c.id), 'danger'), button('انصراف', A.deleteCategories)]),
       };
 
 /** Category picker used both when creating a product and when moving one. */
@@ -132,50 +127,53 @@ export const categoryPicker = (cats: Category[], title: string, toData: (c: Cate
 export const productsList = (products: Product[]): View =>
   products.length
     ? {
-        text: `✏️ <b>مدیریت محصولات</b> — تعداد کل: <b>${products.length}</b>`,
+        text: sections(heading('✏️', 'محصولات'), `${hint(`${fa(products.length)} محصول`)}   ${hint('🟢 فعال   🔴 غیرفعال')}`),
         keyboard: inline(
-          ...products.map((p) => [button(`${statusIcon(p.status)} ${truncate(p.title, 28)} (${money(p.price)} ت)`, A.product(p.id))]),
+          ...products.map((p) => [button(`${statusIcon(p.status)} ${truncate(p.title, 26)} · ${money(p.price)} ت`, A.product(p.id))]),
           toAdminRoot(),
         ),
       }
-    : done('❌ محصولی وجود ندارد.');
+    : done(sections(heading('✏️', 'محصولات'), 'هنوز محصولی ثبت نشده است.'));
 
 export const productInfo = (p: Product, category: Category | null): View => ({
-  text:
-    `<b>📦 اطلاعات محصول #${p.id}:</b>\n\n` +
-    `<b>نام:</b> ${e(p.title)}\n` +
-    `<b>توضیحات:</b> ${e(truncate(p.description, 120))}\n` +
-    `<b>قیمت:</b> ${money(p.price)} تومان\n` +
-    `<b>نویسنده/مدرس:</b> ${e(p.author)}\n` +
-    `<b>تصویر:</b> ${p.image_file_id ? '📷 عکس آپلود شده' : e(p.image_url) || '<i>ندارد</i>'}\n` +
-    `<b>دسته:</b> ${category ? `${category.icon} ${e(category.name)}` : '<i>تعیین نشده</i>'}\n` +
-    `<b>موجودی:</b> ${p.inventory}\n` +
-    `<b>وضعیت:</b> ${p.status === 'enable' ? '✅ فعال' : '❌ غیرفعال'}\n`,
+  text: sections(
+    `📦 <b>${e(p.title)}</b>  ${hint(`#${p.id}`)}`,
+    quote(
+      `💰 <b>قیمت:</b> ${toman(p.price)}\n` +
+        `🏷 <b>موجودی:</b> ${p.inventory}\n` +
+        `📂 <b>دسته:</b> ${category ? `${category.icon} ${e(category.name)}` : hint('تعیین نشده')}\n` +
+        `✍️ <b>نویسنده/مدرس:</b> ${e(p.author) || hint('ندارد')}\n` +
+        `🖼 <b>تصویر:</b> ${p.image_file_id ? 'عکس آپلود شده' : e(p.image_url) || hint('ندارد')}\n` +
+        `📌 <b>وضعیت:</b> ${p.status === 'enable' ? '🟢 فعال' : '🔴 غیرفعال'}`,
+    ),
+    p.description && `📝 <b>توضیحات</b>\n${expandable(e(p.description))}`,
+  ),
+  photo: p.image_file_id || undefined,
   keyboard: inline(
-    [button('✏️ ویرایش این محصول', A.editProduct(p.id))],
-    [button(p.status === 'enable' ? '🗑️ غیرفعال‌سازی (حذف)' : '♻️ فعال‌سازی', A.toggleProduct(p.id))],
-    backRow(A.products),
+    [button('✏️ ویرایش', A.editProduct(p.id), 'primary')],
+    [p.status === 'enable' ? button('🔴 غیرفعال کن (حذف)', A.toggleProduct(p.id), 'danger') : button('🟢 فعال کن', A.toggleProduct(p.id), 'success')],
+    backRow(A.products, '🔙 لیست محصولات'),
   ),
 });
 
 export const PRODUCT_FIELD_LABELS = {
-  title: { button: '📝 تغییر نام', prompt: 'نام جدید محصول را بفرستید:' },
-  description: { button: '💬 تغییر توضیحات', prompt: 'توضیحات جدید محصول را بفرستید:' },
-  price: { button: '💵 تغییر قیمت', prompt: 'قیمت جدید را به تومان (فقط عدد) بفرستید:' },
-  author: { button: '✍️ تغییر نویسنده', prompt: 'نام نویسنده/مدرس جدید را بفرستید:' },
-  image_url: { button: '🖼 تغییر تصویر', prompt: 'تصویر جدید را به صورت Photo یا یک URL بفرستید:' },
-  inventory: { button: '📦 تغییر موجودی', prompt: 'موجودی جدید را (فقط عدد) بفرستید:' },
+  title: { button: '📝 نام', prompt: 'نام جدید محصول را بفرستید:' },
+  description: { button: '💬 توضیحات', prompt: 'توضیحات جدید محصول را بفرستید:' },
+  price: { button: '💰 قیمت', prompt: 'قیمت جدید را به <b>تومان</b> بفرستید (فقط عدد):' },
+  author: { button: '✍️ نویسنده', prompt: 'نام نویسنده/مدرس جدید را بفرستید:' },
+  image_url: { button: '🖼 تصویر', prompt: '🖼 عکس جدید محصول را بفرستید (یا لینک تصویر):' },
+  inventory: { button: '🏷 موجودی', prompt: 'موجودی جدید را بفرستید (فقط عدد):' },
 } as const;
 
 export const productEditMenu = (id: number): View => {
   const f = (field: keyof typeof PRODUCT_FIELD_LABELS) => button(PRODUCT_FIELD_LABELS[field].button, A.editField(id, field));
   return {
-    text: `یک گزینه برای ویرایش محصول #${id} انتخاب کنید:`,
+    text: sections(heading('✏️', `ویرایش محصول #${id}`), '👇 کدام مورد را تغییر می‌دهید؟'),
     keyboard: inline(
-      [f('title'), f('description')],
-      [f('price'), f('author')],
-      [f('image_url'), f('inventory')],
-      [button('🔁 تغییر دسته', A.pickCategory(id)), button('⏯ تغییر وضعیت', A.toggleProduct(id))],
+      [f('title'), f('price')],
+      [f('inventory'), f('image_url')],
+      [f('author'), f('description')],
+      [button('📂 تغییر دسته', A.pickCategory(id)), button('⏯ تغییر وضعیت', A.toggleProduct(id))],
       backRow(A.product(id)),
     ),
   };
@@ -183,44 +181,46 @@ export const productEditMenu = (id: number): View => {
 
 /* ---------- orders ---------- */
 
+const STATUS_ICON: Record<string, string> = { payed: '🟡', approved: '🟢', sending: '📤', rejected: '🔴', cancel: '⚪', pending: '⚪' };
+
 export const ordersList = (orders: Order[]): View =>
   orders.length
     ? {
-        text: '<b>لیست سفارشات اخیر</b>:',
+        text: sections(heading('🧾', 'سفارشات اخیر'), hint('🟡 منتظر تایید   🟢 تایید شده   📤 ارسال شده   🔴 رد شده')),
         keyboard: inline(
-          ...orders.map((o) => [button(`🧾 ${o.track_id} — ${STATUS_FA[o.status]} — ${formatPersianDate(o.time)}`, A.order(o.id))]),
+          ...orders.map((o) => [button(`${STATUS_ICON[o.status]} ${o.track_id} · ${formatPersianDate(o.time)}`, A.order(o.id))]),
           toAdminRoot(),
         ),
       }
-    : done('هیچ سفارش پرداخت‌شده‌ای پیدا نشد.');
+    : done(sections(heading('🧾', 'سفارشات'), 'هنوز سفارشی ثبت نشده است.'));
 
-const ACTION_BUTTONS: Record<AdminOrderAction, string> = {
-  approve: '✅ تایید سفارش',
-  reject: '❌ رد سفارش',
-  send: '📤 ارسال محصول به مشتری',
+const ACTION_BUTTONS: Record<AdminOrderAction, [string, ButtonStyle]> = {
+  approve: ['✅ تایید سفارش', 'success'],
+  reject: ['❌ رد سفارش', 'danger'],
+  send: ['📤 ارسال شد', 'primary'],
 };
 
-/** Order card with the receipt photo; `heading` distinguishes a new-order alert from a lookup. */
-export const orderView = ({ order, details, lines }: FullOrder, heading = '🧾 <b>جزئیات سفارش</b>'): View => {
-  const text =
-    `${heading} (${order.track_id})\n` +
-    `🗓 ${formatPersianDate(order.time)}\n` +
-    (details ? `👤 ${e(details.first_name)} ${e(details.last_name)}\n📍 ${e(details.address)}\n📞 ${e(details.phone_number)}\n` : '') +
-    `📌 وضعیت: <b>${STATUS_FA[order.status]}</b>\n${HR}\n\n` +
-    itemsWithTotal(lines);
-  const actions = ALLOWED_ACTIONS[order.status].map((a) => button(ACTION_BUTTONS[a], A.orderAction(order.id, a)));
+/** Order card with the receipt photo; `title` distinguishes a new-order alert from a lookup. */
+export const orderView = ({ order, details, lines }: FullOrder, title = heading('🧾', 'جزئیات سفارش')): View => {
+  const text = sections(
+    `${title}\n<code>${order.track_id}</code>`,
+    `🗓 ${formatPersianDate(order.time)}\n📌 وضعیت: <b>${STATUS_FA[order.status]}</b>`,
+    details && quote(`👤 ${e(details.first_name)} ${e(details.last_name)}\n📍 ${e(details.address)}\n📱 <code>${e(details.phone_number)}</code>`),
+    itemsWithTotal(lines),
+  );
+  const actions = ALLOWED_ACTIONS[order.status].map((a) => button(ACTION_BUTTONS[a][0], A.orderAction(order.id, a), ACTION_BUTTONS[a][1]));
   return {
     text,
     photo: details?.receipt_file_id ?? undefined,
     keyboard: inline(
       ...(actions.length ? [actions] : []),
       [button('✉️ پیام به خریدار', A.contactBuyer(order.id))],
-      backRow(A.orders, '🔙 بازگشت به لیست'),
+      backRow(A.orders, '🔙 لیست سفارشات'),
     ),
   };
 };
 
 export const dialogOpened = (buyerChatId: number): View => ({
-  text: '✍️ پیام‌تان را برای خریدار بفرستید.\nمی‌توانید <b>متن</b> یا <b>عکس با کپشن</b> ارسال کنید.' + CANCEL_HINT,
-  keyboard: inline([button('🔚 پایان گفتگو', A.closeDialog(buyerChatId))], toAdminRoot()),
+  text: sections(heading('✉️', 'گفتگو با خریدار'), 'پیام‌تان را بفرستید؛ <b>متن</b> یا <b>عکس با کپشن</b>.', CANCEL_HINT),
+  keyboard: inline([button('🔚 پایان گفتگو', A.closeDialog(buyerChatId), 'danger')], toAdminRoot()),
 });
