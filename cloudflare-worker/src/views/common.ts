@@ -13,6 +13,8 @@ export const HR = '┈┈┈┈┈┈┈┈┈┈┈┈┈┈';
 
 export const toman = (n: number): string => `${money(n)} تومان`;
 export const fa = (n: number | string): string => toPersianDigits(String(n));
+/** 12,500 in Persian digits. */
+export const num = (n: number): string => fa(money(n));
 
 export const heading = (emoji: string, title: string): string => `${emoji} <b>${title}</b>`;
 export const quote = (body: string): string => `<blockquote>${body.trimEnd()}</blockquote>`;

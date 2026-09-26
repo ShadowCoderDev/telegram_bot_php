@@ -19,6 +19,9 @@ interface ApiResponse<T> {
 
 type Params = Record<string, unknown>;
 
+/** A Bot API call that hangs is abandoned after this long, instead of holding the update open. */
+const TIMEOUT_MS = 10_000;
+
 /**
  * Thin, typed wrapper over the Bot API using fetch – the Worker replacement for Telegram.php + cURL.
  */
@@ -37,6 +40,7 @@ export class TelegramClient {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(params),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     const body = (await res.json()) as ApiResponse<T>;
     if (!body.ok) throw new TelegramApiError(method, body.error_code ?? res.status, body.description ?? 'unknown');
@@ -100,7 +104,7 @@ export class TelegramClient {
   async downloadFile(fileId: string): Promise<{ body: ArrayBuffer; path: string }> {
     const file = await this.call<{ file_path?: string }>('getFile', { file_id: fileId });
     if (!file.file_path) throw new Error('Telegram returned no file_path');
-    const res = await fetch(`${this.apiBase}/file/bot${this.token}/${file.file_path}`);
+    const res = await fetch(`${this.apiBase}/file/bot${this.token}/${file.file_path}`, { signal: AbortSignal.timeout(3 * TIMEOUT_MS) });
     if (!res.ok) throw new Error(`File download failed: ${res.status}`);
     return { body: await res.arrayBuffer(), path: file.file_path };
   }

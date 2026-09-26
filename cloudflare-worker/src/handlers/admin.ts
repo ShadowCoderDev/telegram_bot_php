@@ -43,7 +43,15 @@ const FAQ_STEP = (n: number, body: string) => v.formStep('افزودن سوال 
  */
 export function registerAdminRoutes(router: Router, d: Deps): Router {
   const showAdmins = async (ctx: BotContext) => ctx.render(v.adminsPage(d.envAdminIds, await d.settings.claimedAdmins(), ctx.chatId));
-  const rootView = async () => v.adminRoot(await d.orders.countAllAwaitingReview(), await subscriptionInfo(d));
+  const rootView = async () => {
+    const [awaiting, subscription, today, limits] = await Promise.all([
+      d.orders.countAllAwaitingReview(),
+      subscriptionInfo(d),
+      d.usage.today(Math.floor(Date.now() / 1000)),
+      d.limits(false),
+    ]);
+    return v.adminRoot(awaiting, subscription, { updates: today.updates, cap: limits.updates });
+  };
   const showRoot = async (ctx: BotContext) => ctx.render(await rootView());
   const showFaqs = async (ctx: BotContext) => ctx.render(v.faqsManage(await d.faqs.list(false)));
   const showFaq = async (ctx: BotContext, id: number) => {
@@ -69,15 +77,19 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
     const p = clampPage(page, total);
     await ctx.render(v.productsList(await d.products.listPage(v.PAGE_SIZE, p * v.PAGE_SIZE), p, total));
   };
-  const showOrders = async (ctx: BotContext, page: number) => {
-    const total = await d.orders.countPlaced();
-    const p = clampPage(page, total);
-    await ctx.render(v.ordersList(await d.orders.placedPage(v.PAGE_SIZE, p * v.PAGE_SIZE), p, total));
+  // Orders and customers grow without bound: fetch one row more than a page to know if another
+  // page follows, instead of counting them all on every view.
+  const showOrders = async (ctx: BotContext, page: number): Promise<void> => {
+    const p = Math.max(0, page);
+    const rows = await d.orders.placedPage(v.PAGE_SIZE + 1, p * v.PAGE_SIZE);
+    if (!rows.length && p > 0) return showOrders(ctx, 0);
+    await ctx.render(v.ordersList(rows.slice(0, v.PAGE_SIZE), p, rows.length > v.PAGE_SIZE));
   };
-  const showCustomers = async (ctx: BotContext, page: number) => {
-    const total = await d.users.count();
-    const p = clampPage(page, total);
-    await ctx.render(v.customersList(await d.users.customersPage(v.PAGE_SIZE, p * v.PAGE_SIZE), p, total));
+  const showCustomers = async (ctx: BotContext, page: number): Promise<void> => {
+    const p = Math.max(0, page);
+    const rows = await d.users.customersPage(v.PAGE_SIZE + 1, p * v.PAGE_SIZE);
+    if (!rows.length && p > 0) return showCustomers(ctx, 0);
+    await ctx.render(v.customersList(rows.slice(0, v.PAGE_SIZE), p, rows.length > v.PAGE_SIZE));
   };
   const showCustomer = async (ctx: BotContext, userId: number, page: number) => {
     const c = await d.users.customer(userId);
@@ -123,14 +135,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
       })
 
       /* ----- stats ----- */
-      .callback(A.stats, async (ctx) => {
-        const [users, products, money] = await Promise.all([
-          d.users.count(),
-          d.products.count(),
-          d.orders.stats(tehranDayAndMonthStart(Math.floor(Date.now() / 1000))),
-        ]);
-        await ctx.render(v.statsView({ users, products, ...money }));
-      })
+      .callback(A.stats, async (ctx) => ctx.render(v.statsView(await shopStats(d))))
 
       /* ----- settings ----- */
       .callback(A.settings, async (ctx) => ctx.render(v.settingsMenu(await d.settings.getMany(SETTING_KEYS))))
@@ -515,6 +520,24 @@ async function addProductStep(ctx: BotContext, s: Session<Data>, d: Deps, text: 
       return ctx.reply({ text: '👆 لطفاً دسته‌بندی را از دکمه‌های بالا انتخاب کنید.' });
   }
   await ctx.reply(v.prompt('⚠️ لطفاً یک متن ارسال کنید.'));
+}
+
+/** How long the stats page reuses its numbers: totals read every row they count. */
+const STATS_TTL = 600;
+
+/** The stats page's numbers, computed at most every STATS_TTL seconds (kept in the settings table). */
+async function shopStats(d: Deps): Promise<v.ShopStats> {
+  const now = Math.floor(Date.now() / 1000);
+  try {
+    const cached = JSON.parse((await d.settings.raw('stats_cache')) ?? 'null') as v.ShopStats | null;
+    if (cached && now - cached.at < STATS_TTL && now - cached.at >= 0) return cached;
+  } catch {
+    // Unreadable cache: compute again.
+  }
+  const [users, products, money] = await Promise.all([d.users.count(), d.products.count(), d.orders.stats(tehranDayAndMonthStart(now))]);
+  const stats: v.ShopStats = { at: now, users, products, ...money };
+  await d.settings.set('stats_cache', JSON.stringify(stats));
+  return stats;
 }
 
 /** The shop's subscription as shown on the admin panel; none for the platform owner's own shop. */

@@ -2,13 +2,15 @@ import type { Category, CategoryWithCount, CustomerSummary, Faq, Order, Product 
 import type { SettingKey } from '../db/repositories';
 import type { FullOrder } from '../services/OrderService';
 import { ALLOWED_ACTIONS, STATUS_FA, type AdminOrderAction } from '../services/orderStatus';
+import { WARN_SHARE } from '../capacity';
+import { UNCAPPED } from '../db/usage';
 import { GRACE_DAYS, type Access } from '../services/subscription';
 import { backRow, button, inline, replyKeyboard, urlButton } from '../telegram/keyboard';
 import type { ButtonStyle, InlineKeyboardButton, View } from '../telegram/types';
 import { escapeHtml as e, money, truncate } from '../utils/format';
 import { formatPersianDate } from '../utils/persian';
 import { CB } from './callbacks';
-import { CANCEL_HINT, expandable, fa, heading, hint, itemsWithTotal, progress, quote, sections, toman } from './common';
+import { CANCEL_HINT, expandable, fa, heading, hint, itemsWithTotal, num, progress, quote, sections, toman } from './common';
 
 const A = CB.admin;
 const toAdminRoot = () => backRow(A.root, '🔙 پنل مدیریت');
@@ -33,6 +35,21 @@ const pager = (page: number, pages: number, toData: (page: number) => string): I
           ...(page > 0 ? [button('◀️ قبلی', toData(page - 1))] : []),
           button(`${fa(page + 1)} / ${fa(pages)}`, CB.noop),
           ...(page < pages - 1 ? [button('بعدی ▶️', toData(page + 1))] : []),
+        ],
+      ];
+
+/**
+ * ◀️ قبلی   صفحه ۲   بعدی ▶️ – for lists that can grow without bound (orders, customers): counting
+ * them would read every row on every view, so the page only knows whether another one follows.
+ */
+const openPager = (page: number, hasNext: boolean, toData: (page: number) => string): InlineKeyboardButton[][] =>
+  page === 0 && !hasNext
+    ? []
+    : [
+        [
+          ...(page > 0 ? [button('◀️ قبلی', toData(page - 1))] : []),
+          button(`صفحه ${fa(page + 1)}`, CB.noop),
+          ...(hasNext ? [button('بعدی ▶️', toData(page + 1))] : []),
         ],
       ];
 
@@ -62,10 +79,25 @@ const subscriptionLine = (s: SubscriptionInfo): string => {
   }
 };
 
-export const adminRoot = (awaitingReview = 0, subscription?: SubscriptionInfo): View => ({
+/** How many updates the bot handled today, against the shop's daily cap. */
+export interface UsageInfo {
+  updates: number;
+  cap: number;
+}
+
+const usageLine = (u: UsageInfo): string => {
+  if (u.cap >= UNCAPPED) return `📶 پیام‌های امروز: <b>${num(u.updates)}</b>`;
+  const line = `📶 مصرف امروز: <b>${num(Math.min(u.updates, u.cap))}</b> از ${num(u.cap)} پیام ${hint(`(${fa(Math.min(100, Math.round((100 * u.updates) / u.cap)))}٪)`)}`;
+  if (u.updates >= u.cap) return `${line}\n⛔ <b>ظرفیت امروز تکمیل شده.</b> مشتری‌ها تا ۳:۳۰ بامداد پیام «ظرفیت امروز تکمیل شده» می‌بینند؛ شما همچنان به پنل دسترسی دارید.`;
+  if (u.updates >= u.cap * WARN_SHARE) return `${line}\n⚠️ نزدیک سقف روزانه‌اید. سقف هر روز ساعت ۳:۳۰ بامداد از نو شروع می‌شود.`;
+  return line;
+};
+
+export const adminRoot = (awaitingReview = 0, subscription?: SubscriptionInfo, usage?: UsageInfo): View => ({
   text: sections(
     heading('🔐', 'پنل مدیریت'),
     subscription && subscriptionLine(subscription),
+    usage && usageLine(usage),
     awaitingReview ? `🟡 <b>${fa(awaitingReview)}</b> سفارش منتظر تایید شماست.` : '',
     '👇 یکی از بخش‌ها را انتخاب کنید:',
   ),
@@ -91,12 +123,22 @@ export const prompt = (text: string): View => ({ text: sections(text, CANCEL_HIN
 export const formStep = (title: string, step: number, total: number, body: string): View =>
   prompt(sections(`${heading('📝', title)}\n${progress(step, total)}`, body));
 
-export const statsView = (s: { users: number; products: number; completed: number; daily: number; monthly: number }): View => ({
+export interface ShopStats {
+  /** When the numbers were computed (they are reused for a few minutes). */
+  at: number;
+  users: number;
+  products: number;
+  completed: number;
+  daily: number;
+  monthly: number;
+}
+
+export const statsView = (s: ShopStats): View => ({
   text: sections(
     heading('📊', 'آمار فروشگاه'),
-    quote(`👥 کاربران: <b>${fa(s.users)}</b>\n📦 محصولات: <b>${fa(s.products)}</b>\n✅ سفارشات موفق: <b>${fa(s.completed)}</b>`),
+    quote(`👥 کاربران: <b>${num(s.users)}</b>\n📦 محصولات: <b>${num(s.products)}</b>\n✅ سفارشات موفق: <b>${num(s.completed)}</b>`),
     `💰 <b>درآمد</b>\n` + quote(`☀️ امروز: <b>${toman(s.daily)}</b>\n🌙 این ماه: <b>${toman(s.monthly)}</b>`),
-    hint('سفارش‌های پرداخت‌شده، تاییدشده و ارسال‌شده حساب می‌شوند.'),
+    hint(`سفارش‌های پرداخت‌شده، تاییدشده و ارسال‌شده حساب می‌شوند.\n🕒 به‌روز شده در ${formatPersianDate(s.at).split(' - ')[1] ?? ''} · هر ۱۰ دقیقه تازه می‌شود.`),
   ),
   keyboard: inline(toAdminRoot()),
 });
@@ -295,11 +337,11 @@ const STATUS_ICON: Record<string, string> = { payed: '🟡', approved: '🟢', s
 const STATUS_LEGEND = hint('🟡 منتظر تایید   🟢 تایید شده   📤 ارسال شده   🔴 رد شده');
 const orderButton = (o: Order) => button(`${STATUS_ICON[o.status]} ${o.track_id} · ${formatPersianDate(o.time)}`, A.order(o.id));
 
-export const ordersList = (orders: Order[], page: number, total: number): View =>
-  total
+export const ordersList = (orders: Order[], page: number, hasNext: boolean): View =>
+  orders.length
     ? {
-        text: sections(heading('🧾', 'سفارشات'), `${hint(`${fa(total)} سفارش`)}\n${STATUS_LEGEND}`),
-        keyboard: inline(...orders.map((o) => [orderButton(o)]), ...pager(page, pageCount(total), A.ordersPage), toAdminRoot()),
+        text: sections(heading('🧾', 'سفارشات'), `${hint('جدیدترین اول')}\n${STATUS_LEGEND}`),
+        keyboard: inline(...orders.map((o) => [orderButton(o)]), ...openPager(page, hasNext, A.ordersPage), toAdminRoot()),
       }
     : done(sections(heading('🧾', 'سفارشات'), 'هنوز سفارشی ثبت نشده است.'));
 
@@ -308,15 +350,15 @@ export const ordersList = (orders: Order[], page: number, total: number): View =
 const customerLabel = (c: CustomerSummary) =>
   `${c.status === 'disable' ? '🚫' : c.awaiting_review ? '🟡' : '👤'} ${truncate(c.name || String(c.chat_id), 22)} · ${fa(c.orders_count)} سفارش`;
 
-export const customersList = (customers: CustomerSummary[], page: number, total: number): View => ({
+export const customersList = (customers: CustomerSummary[], page: number, hasNext: boolean): View => ({
   text: sections(
     heading('👥', 'مشتریان'),
-    `${hint(`${fa(total)} مشتری · به ترتیب آخرین فعالیت`)}\n${hint('🟡 سفارش منتظر تایید دارد   🚫 مسدود')}`,
+    customers.length ? `${hint('به ترتیب آخرین فعالیت')}\n${hint('🟡 سفارش منتظر تایید دارد   🚫 مسدود')}` : 'هنوز مشتری‌ای ندارید.',
   ),
   keyboard: inline(
     [button('🔍 جستجوی مشتری', A.findCustomer, 'primary')],
     ...customers.map((c) => [button(customerLabel(c), A.customer(c.id))]),
-    ...pager(page, pageCount(total), A.customersPage),
+    ...openPager(page, hasNext, A.customersPage),
     toAdminRoot(),
   ),
 });

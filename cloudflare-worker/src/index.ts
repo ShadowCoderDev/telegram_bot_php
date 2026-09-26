@@ -1,8 +1,10 @@
 import { createBot } from './bot';
+import { meterD1, emptyUsage, type D1Usage } from './db/meter';
 import { ensureSchema } from './db/migrate';
+import { addPendingUsage } from './db/usage';
 import { createDeps } from './deps';
 import type { Env } from './env';
-import { createPlatformBot, createPlatformDeps, sendReminders } from './platform';
+import { checkCapacity, createPlatformBot, createPlatformDeps, sendReminders } from './platform';
 import { FileStore } from './services/FileStore';
 import { statusPage } from './setup';
 import { TelegramClient } from './telegram/TelegramClient';
@@ -17,11 +19,17 @@ import { sameSecret } from './crypto';
  *   POST /platform       the platform bot (create / renew shops, owner panel)
  *   GET  /               status page; also connects the webhooks (first-time setup)
  *   GET  /files/<key>    public product images from R2 (only when R2 is configured)
- *   cron (hourly)        subscription expiry reminders
+ *   cron (hourly)        subscription expiry reminders, capacity alarm
+ *
+ * Every D1 query goes through a meter; what a request cost is added to its bot's daily usage
+ * (src/db/usage.ts) – the numbers behind the daily caps and the capacity page.
  */
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, rawEnv: Env): Promise<Response> {
     const url = new URL(request.url);
+    // Every query of this request goes through the meter (rows read / written, as Cloudflare counts them).
+    const usage = emptyUsage();
+    const env: Env = { ...rawEnv, DB: meterD1(rawEnv.DB, usage) };
     const secret = request.headers.get('x-telegram-bot-api-secret-token');
 
     const shopRoute = /^\/webhook(?:\/(\d+))?$/.exec(url.pathname);
@@ -29,7 +37,7 @@ export default {
       await ensureSchema(env.DB);
       const shop = await resolveShop(env, Number(shopRoute[1] ?? OWNER_SHOP_ID), secret);
       if (!shop) return new Response('Forbidden', { status: 403 });
-      return handle(request, (update) => createBot(createDeps(env, url.origin, shop))(update));
+      return handle(request, usage, shop.id, (update) => createBot(createDeps(env, url.origin, shop))(update));
     }
 
     if (request.method === 'POST' && url.pathname === '/platform') {
@@ -37,7 +45,7 @@ export default {
         return new Response('Forbidden', { status: 403 });
       }
       await ensureSchema(env.DB);
-      return handle(request, (update) => createPlatformBot(createPlatformDeps(env, url.origin))(update));
+      return handle(request, usage, 0, (update) => createPlatformBot(createPlatformDeps(env, url.origin))(update));
     }
 
     if (request.method === 'GET' && url.pathname === '/') {
@@ -52,19 +60,37 @@ export default {
     return new Response('Not found', { status: 404 });
   },
 
-  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    await ensureSchema(env.DB);
-    await sendReminders(createPlatformDeps(env, ''));
+  async scheduled(_controller: ScheduledController, rawEnv: Env): Promise<void> {
+    const usage = emptyUsage();
+    const env: Env = { ...rawEnv, DB: meterD1(rawEnv.DB, usage) };
+    try {
+      await ensureSchema(env.DB);
+      const d = createPlatformDeps(env, '');
+      await sendReminders(d);
+      await checkCapacity(d);
+    } finally {
+      addPendingUsage(0, usage); // the cron's own cost counts as the platform's
+    }
   },
 } satisfies ExportedHandler<Env>;
 
-/** Runs a bot on one update and always ACKs: a non-2xx makes Telegram redeliver it in a loop. */
-async function handle(request: Request, run: (update: Update) => Promise<void>): Promise<Response> {
+/**
+ * Runs a bot on one update and always ACKs: a non-2xx makes Telegram redeliver it in a loop.
+ * The response reports what the update cost in D1 (Telegram ignores it; tests and ops read it).
+ */
+async function handle(request: Request, usage: D1Usage, shopId: number, run: (update: Update) => Promise<void>): Promise<Response> {
   const update = (await request.json()) as Update;
   try {
     await run(update);
   } catch (err) {
     console.error('update failed', update.update_id, err);
   }
-  return new Response('ok');
+  addPendingUsage(shopId, usage);
+  return new Response('ok', { headers: usageHeaders(usage) });
 }
+
+const usageHeaders = (u: D1Usage) => ({
+  'x-d1-queries': String(u.queries),
+  'x-d1-rows-read': String(u.rowsRead),
+  'x-d1-rows-written': String(u.rowsWritten),
+});

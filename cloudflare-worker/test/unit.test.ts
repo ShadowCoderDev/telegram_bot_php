@@ -10,6 +10,10 @@ import { escapeHtml, money, splitHtml } from '../src/utils/format';
 import { formatPersianDate, parseAmount, tehranDayAndMonthStart, toEnglishDigits, toJalali } from '../src/utils/persian';
 import { cartView, myOrdersView, productCard } from '../src/views/user';
 import { parseAdminIds } from '../src/deps';
+import { capAlert, dailyCap, parseCapacitySettings } from '../src/capacity';
+import { PLATFORM_SETTING_DEFAULTS } from '../src/db/repositories';
+import { UNCAPPED, utcDay } from '../src/db/usage';
+import { flooding, onceEvery } from '../src/flood';
 
 describe('persian utils', () => {
   it('normalises Persian and Arabic digits', () => {
@@ -175,5 +179,52 @@ describe('Router', () => {
   it('marks admins from the configured ids', () => {
     expect(new BotContext(cbUpdate('x'), tg, [7]).isAdmin).toBe(true);
     expect(new BotContext(cbUpdate('x'), tg, [8]).isAdmin).toBe(false);
+  });
+});
+
+describe('capacity policy', () => {
+  const c = parseCapacitySettings({ ...PLATFORM_SETTING_DEFAULTS });
+
+  it('gives each shop its plan cap, its own override, or none for the owner shop', () => {
+    expect(dailyCap({ plan: 'trial', daily_limit: null }, c)).toBe(1000);
+    expect(dailyCap({ plan: 'paid', daily_limit: null }, c)).toBe(5000);
+    expect(dailyCap({ plan: 'paid', daily_limit: 12_000 }, c)).toBe(12_000);
+    expect(dailyCap({ plan: 'owner', daily_limit: 10 }, c)).toBe(UNCAPPED);
+  });
+
+  it('falls back to the defaults when a setting is not a positive number', () => {
+    const broken = parseCapacitySettings({ ...PLATFORM_SETTING_DEFAULTS, trial_daily_limit: 'abc', alert_percent: '-5' });
+    expect(broken.trialCap).toBe(1000);
+    expect(broken.alertShare).toBe(0.7);
+    expect(broken.quota).toEqual({ requests: 100_000, writes: 100_000, reads: 5_000_000, storage: 500 * 1024 * 1024 });
+  });
+
+  it('alerts exactly once at 80% and once at the cap', () => {
+    const alerts = Array.from({ length: 1200 }, (_, i) => capAlert(i + 1, 1000)).map((a, i) => a && `${a}@${i + 1}`).filter(Boolean);
+    expect(alerts).toEqual(['warn@800', 'full@1000']);
+    expect(capAlert(5, UNCAPPED)).toBeNull();
+    expect(capAlert(1, 1)).toBe('full');
+  });
+
+  it('counts days in UTC, the way Cloudflare resets its quotas (03:30 in Tehran)', () => {
+    const midnightUtc = Date.UTC(2026, 8, 26) / 1000;
+    expect(utcDay(midnightUtc - 1)).toBe(utcDay(midnightUtc) - 1);
+    expect(utcDay(midnightUtc + 86_399)).toBe(utcDay(midnightUtc));
+  });
+});
+
+describe('flood guard (in memory)', () => {
+  it('lets a chat through up to the limit within the window, then again after it', () => {
+    const t = 1_000_000;
+    const results = Array.from({ length: 12 }, (_, i) => flooding('u1', 10, 10, t + i));
+    expect(results.filter(Boolean)).toHaveLength(2);
+    expect(flooding('u2', 10, 10, t)).toBe(false); // other chats are not affected
+    expect(flooding('u1', 10, 10, t + 11_000)).toBe(false); // the window moved on
+  });
+
+  it('says "slow down" at most once per window', () => {
+    expect(onceEvery('k', 60, 0)).toBe(true);
+    expect(onceEvery('k', 60, 59_000)).toBe(false);
+    expect(onceEvery('k', 60, 61_000)).toBe(true);
   });
 });

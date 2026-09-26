@@ -7,6 +7,7 @@ import { createServer, type Server } from 'node:http';
 import { rmSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { send } from './harness';
 
 const ADMIN = 1001;
 const BUYER = 2002;
@@ -33,7 +34,7 @@ const lastText = (chatId: number) => {
 };
 
 async function post(update: object, secret = SECRET) {
-  return fetch(`http://127.0.0.1:${WORKER_PORT}/webhook`, {
+  return send(`http://127.0.0.1:${WORKER_PORT}/webhook`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': secret },
     body: JSON.stringify({ update_id: ++updateId, ...update }),
@@ -299,14 +300,15 @@ describe('shop bot end-to-end', () => {
         message: { message_id: 50, chat: { id: BUYER, type: 'private' } },
       },
     };
-    const send = () =>
-      fetch(`http://127.0.0.1:${WORKER_PORT}/webhook`, {
+    const deliver = () =>
+      send(`http://127.0.0.1:${WORKER_PORT}/webhook`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': SECRET },
         body: JSON.stringify(update),
       });
-    await send();
-    await send(); // Telegram retry of the same update
+    await deliver();
+    await deliver(); // Telegram retry of the same update
+    await Promise.all([deliver(), deliver()]); // ... even two at the same moment
     await press(BUYER, 'cart');
     expect(lastText(BUYER)).toContain('تعداد: ۱');
     await press(BUYER, 'cart:clear');
@@ -393,6 +395,20 @@ describe('shop bot end-to-end', () => {
     const answered = sent(FLOODER).length;
     expect(answered).toBeGreaterThanOrEqual(100);
     expect(answered).toBeLessThan(130);
+  });
+
+  it('apologises instead of going silent when the database fails', async () => {
+    sql('ALTER TABLE faqs RENAME TO faqs_moved');
+    try {
+      await press(BUYER2, 'faqs');
+      expect(lastText(BUYER2)).toContain('مشکلی موقتی پیش آمد');
+      await press(BUYER2, 'faqs'); // at most once a minute per chat
+      expect(sent(BUYER2).filter((c) => String(c.params.text).includes('مشکلی موقتی'))).toHaveLength(1);
+    } finally {
+      sql('ALTER TABLE faqs_moved RENAME TO faqs');
+    }
+    await press(BUYER2, 'faqs');
+    expect(lastText(BUYER2)).not.toContain('مشکلی موقتی');
   });
 
   it('serves a status page that registers the webhook', async () => {
