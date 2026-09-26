@@ -1,0 +1,55 @@
+import type { SettingKey } from '../db/repositories';
+import type { AdminOrderAction } from '../services/orderStatus';
+
+/**
+ * Every callback_data string the bot emits, in one place. Handlers match the same shapes with regexes.
+ * Short "ns:verb:id" strings keep well under Telegram's 64-byte limit.
+ */
+export const CB = {
+  noop: 'noop',
+  home: 'home',
+  shop: 'shop',
+  category: (id: number) => `cat:${id}`,
+  product: (id: number) => `prod:${id}`,
+  qty: (id: number, qty: number) => `qty:${id}:${qty}`,
+  add: (id: number, qty: number) => `add:${id}:${qty}`,
+  cart: 'cart',
+  clearCart: 'cart:clear',
+  checkout: 'checkout',
+  myOrders: 'orders',
+  faqs: 'faqs',
+  faq: (id: number) => `faq:${id}`,
+  help: 'help',
+  support: 'support',
+
+  admin: {
+    root: 'a:root',
+    stats: 'a:stats',
+    cancel: 'a:cancel',
+    settings: 'a:settings',
+    editSetting: (key: SettingKey) => `a:set:${key}`,
+    faqs: 'a:faqs',
+    addFaq: 'a:faq:add',
+    toggleFaq: (id: number) => `a:faq:toggle:${id}`,
+    categories: 'a:cats',
+    addCategory: 'a:cat:add',
+    toggleCategory: (id: number) => `a:cat:toggle:${id}`,
+    deleteCategories: 'a:cat:del',
+    deleteCategory: (id: number) => `a:cat:del:${id}`,
+    deleteCategoryConfirm: (id: number) => `a:cat:delok:${id}`,
+    products: 'a:prods',
+    addProduct: 'a:prod:add',
+    product: (id: number) => `a:prod:${id}`,
+    editProduct: (id: number) => `a:prod:edit:${id}`,
+    editField: (id: number, field: string) => `a:prod:field:${id}:${field}`,
+    pickCategory: (id: number) => `a:prod:cat:${id}`,
+    setCategory: (id: number, catId: number) => `a:prod:setcat:${id}:${catId}`,
+    toggleProduct: (id: number) => `a:prod:toggle:${id}`,
+    newProductCategory: (catId: number) => `a:prod:newcat:${catId}`,
+    orders: 'a:orders',
+    order: (id: number) => `a:order:${id}`,
+    orderAction: (id: number, action: AdminOrderAction) => `a:order:${action}:${id}`,
+    contactBuyer: (orderId: number) => `a:dialog:${orderId}`,
+    closeDialog: (buyerChatId: number) => `a:dialog:close:${buyerChatId}`,
+  },
+} as const;
