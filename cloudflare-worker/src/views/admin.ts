@@ -1,6 +1,5 @@
 import type { Category, Faq, Order, Product } from '../db/models';
 import type { SettingKey } from '../db/repositories';
-import { cartTotal } from '../services/CartService';
 import type { FullOrder } from '../services/OrderService';
 import { ALLOWED_ACTIONS, STATUS_FA, type AdminOrderAction } from '../services/orderStatus';
 import { backRow, button, inline, replyKeyboard } from '../telegram/keyboard';
@@ -8,6 +7,7 @@ import type { InlineKeyboardButton, View } from '../telegram/types';
 import { escapeHtml as e, money, truncate } from '../utils/format';
 import { formatPersianDate } from '../utils/persian';
 import { CB } from './callbacks';
+import { itemsWithTotal } from './common';
 
 const A = CB.admin;
 const HR = '─────────────────';
@@ -147,7 +147,7 @@ export const productInfo = (p: Product, category: Category | null): View => ({
     `<b>توضیحات:</b> ${e(truncate(p.description, 120))}\n` +
     `<b>قیمت:</b> ${money(p.price)} تومان\n` +
     `<b>نویسنده/مدرس:</b> ${e(p.author)}\n` +
-    `<b>تصویر:</b> ${e(p.image_url) || '<i>ندارد</i>'}\n` +
+    `<b>تصویر:</b> ${p.image_file_id ? '📷 عکس آپلود شده' : e(p.image_url) || '<i>ندارد</i>'}\n` +
     `<b>دسته:</b> ${category ? `${category.icon} ${e(category.name)}` : '<i>تعیین نشده</i>'}\n` +
     `<b>موجودی:</b> ${p.inventory}\n` +
     `<b>وضعیت:</b> ${p.status === 'enable' ? '✅ فعال' : '❌ غیرفعال'}\n`,
@@ -206,9 +206,8 @@ export const orderView = ({ order, details, lines }: FullOrder, heading = '🧾 
     `${heading} (${order.track_id})\n` +
     `🗓 ${formatPersianDate(order.time)}\n` +
     (details ? `👤 ${e(details.first_name)} ${e(details.last_name)}\n📍 ${e(details.address)}\n📞 ${e(details.phone_number)}\n` : '') +
-    `وضعیت فعلی: <b>${STATUS_FA[order.status]}</b>\n${HR}\n<b>آیتم‌ها:</b>\n` +
-    lines.map((l) => `• ${e(l.title)} × ${l.quantity} = ${money(l.price * l.quantity)} ت\n`).join('') +
-    `${HR}\n💰 جمع کل: <b>${money(cartTotal(lines))} تومان</b>`;
+    `📌 وضعیت: <b>${STATUS_FA[order.status]}</b>\n${HR}\n\n` +
+    itemsWithTotal(lines);
   const actions = ALLOWED_ACTIONS[order.status].map((a) => button(ACTION_BUTTONS[a], A.orderAction(order.id, a)));
   return {
     text,

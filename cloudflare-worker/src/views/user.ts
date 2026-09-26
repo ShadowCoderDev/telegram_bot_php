@@ -1,9 +1,10 @@
 import type { Category, Faq, Order, OrderLine, Product } from '../db/models';
-import { cartTotal, type StockProblem } from '../services/CartService';
+import type { StockProblem } from '../services/CartService';
 import { STATUS_FA } from '../services/orderStatus';
 import { backRow, button, inline, replyKeyboard } from '../telegram/keyboard';
 import type { View } from '../telegram/types';
 import { escapeHtml as e, money, truncate } from '../utils/format';
+import { itemsWithTotal, toman } from './common';
 import { formatPersianDate } from '../utils/persian';
 import { CB } from './callbacks';
 
@@ -64,25 +65,33 @@ export const productNotFound = (): View => ({
   keyboard: inline(backRow(CB.shop)),
 });
 
+const CAPTION_LIMIT = 1024;
+
 export const productCard = (p: Product, qty: number): View => {
-  // A zero-width link makes Telegram show the image as a preview above the text.
-  const image = p.image_url ? `<a href="${e(p.image_url)}">&#8203;</a>` : '';
-  return {
-    text:
-      image +
-      `<b>▫️ محصول:</b> ✨ ${e(p.title)} ✨\n\n` +
-      `<b>💸 مبلغ واحد:</b> ${money(p.price)} تومان\n` +
-      `<b>🔢 تعداد انتخابی:</b> ${qty}\n` +
-      `<b>💰 مبلغ این آیتم:</b> ${money(p.price * qty)} تومان\n\n` +
-      `<b>▫️ توضیحات:</b>\n${e(p.description)}\n` +
-      (p.author ? `\n<b>✍️ نویسنده/مدرس:</b> ${e(p.author)}\n` : '') +
-      (p.inventory <= 0 ? '\n⛔ <b>ناموجود</b>\n' : ''),
-    keyboard: inline(
-      [button('➖', CB.qty(p.id, qty - 1)), button(String(qty), CB.noop), button('➕', CB.qty(p.id, qty + 1))],
-      [button('افزودن به سبد خرید ✅', CB.add(p.id, qty))],
+  const head =
+    `✨ <b>${e(p.title)}</b>\n` +
+    (p.author ? `✍️ ${e(p.author)}\n` : '') +
+    '\n' +
+    `💰 قیمت واحد: <b>${toman(p.price)}</b>\n` +
+    `🔢 تعداد: <b>${qty}</b>\n` +
+    `💵 جمع: <b>${toman(p.price * qty)}</b>\n` +
+    (p.inventory <= 0 ? '⛔ <b>ناموجود</b>\n' : '');
+  const descTitle = '\n📝 <b>توضیحات:</b>\n';
+  let desc = e(p.description);
+  if (p.image_file_id && head.length + descTitle.length + desc.length > CAPTION_LIMIT) {
+    // Photo captions are capped at 1024 characters; shorten the description rather than drop the photo.
+    desc = e(truncate(p.description, CAPTION_LIMIT - head.length - descTitle.length - 40));
+  }
+  const body = head + (p.description ? descTitle + desc : '');
+  const keyboard = inline(
+    [button('➖', CB.qty(p.id, qty - 1)), button(String(qty), CB.noop), button('➕', CB.qty(p.id, qty + 1))],
+    [button('افزودن به سبد خرید ✅', CB.add(p.id, qty))],
       backRow(CB.category(p.category_id ?? 0), 'بازگشت به لیست 🔙'),
-    ),
-  };
+  );
+  if (p.image_file_id) return { photo: p.image_file_id, text: body, keyboard };
+  // A zero-width link makes Telegram show a linked image as a preview above the text.
+  const preview = p.image_url ? `<a href="${e(p.image_url)}">&#8203;</a>` : '';
+  return { text: preview + body, keyboard };
 };
 
 export const addedToCart = (qty: number): View => ({
@@ -100,15 +109,9 @@ export const notEnoughStock = (p: Product, inCart: number, qty: number): View =>
 export const emptyCart = (): View => ({ text: '📪 سبد خرید شما خالی هست', keyboard: inline(homeRow()) });
 
 export const cartView = (lines: OrderLine[]): View => {
-  const body = lines
-    .map(
-      (l) =>
-        `📦 <b>${e(l.title)}</b>\n🔢 تعداد: ${l.quantity}\n💵 قیمت: ${money(l.price * l.quantity)} تومان\n` +
-        `🗑️ حذف: /delete_item_${l.item_id}\n${HR}\n`,
-    )
-    .join('');
+  const items = itemsWithTotal(lines, (l) => `      🗑 حذف: /delete_item_${l.item_id}\n`);
   return {
-    text: `<b>🛒 سبد خرید شما:</b>\n\n${body}\n✅ <b>جمع کل:</b> ${money(cartTotal(lines))} تومان\n`,
+    text: `🛒 <b>سبد خرید شما</b>\n${HR}\n\n${items}`,
     keyboard: inline(
       [button('تکمیل خرید 💳', CB.checkout)],
       [button('حذف سبد خرید ❌', CB.clearCart), button('بازگشت 🔙', CB.home)],
@@ -126,18 +129,17 @@ export const stockProblemsView = (problems: StockProblem[]): View => ({
 
 export const myOrdersView = (orders: Order[], lines: Map<number, OrderLine[]>): View => {
   if (!orders.length) return { text: '📑 <b>سفارشات شما</b>\n\nهنوز سفارش تکمیل‌شده‌ای ندارید.', keyboard: inline(homeRow()) };
-  const blocks = orders.map((o) => {
-    const items = lines.get(o.id) ?? [];
-    return (
-      `🆔 <b>کد رهگیری: ${o.track_id}</b>\n` +
-      `🗓 ${formatPersianDate(o.time)}\n` +
-      '<b>محصولات خریداری شده:</b>\n' +
-      items.map((i) => `   • <i>${e(i.title)}</i> (تعداد: ${i.quantity} - قیمت فی: ${money(i.price)} تومان)\n`).join('') +
-      `💵 <b>جمع کل:</b> ${money(cartTotal(items))} تومان\n` +
-      `📌 <b>وضعیت:</b> ${STATUS_FA[o.status]}\n────\n`
-    );
-  });
-  return { text: `📑 <b>${orders.length} سفارش آخر شما:</b>\n\n${blocks.join('\n')}`, keyboard: inline(homeRow()) };
+  const blocks = orders.map(
+    (o) =>
+      `🆔 کد رهگیری: <code>${o.track_id}</code>\n` +
+      `🗓 تاریخ: ${formatPersianDate(o.time)}\n` +
+      `📌 وضعیت: ${STATUS_FA[o.status]}\n\n` +
+      itemsWithTotal(lines.get(o.id) ?? []),
+  );
+  return {
+    text: `📑 <b>${orders.length} سفارش آخر شما</b>\n${HR}\n\n${blocks.join(`\n\n${HR}\n\n`)}`,
+    keyboard: inline(homeRow()),
+  };
 };
 
 export const faqsView = (faqs: Faq[]): View =>

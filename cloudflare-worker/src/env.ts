@@ -1,6 +1,6 @@
 export interface Env {
   DB: D1Database;
-  /** Optional: without R2, receipts are kept as Telegram file_ids and product images must be URLs. */
+  /** Optional archive for receipts. Photos (receipts, products) are always kept as Telegram file_ids. */
   FILES?: R2Bucket;
   /** Secret: token from @BotFather. */
   BOT_TOKEN: string;

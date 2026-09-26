@@ -62,6 +62,8 @@ export class CategoryRepository extends Repository {
 }
 
 export type ProductDraft = Omit<Product, 'id' | 'status'>;
+/** A product image is either an uploaded photo or a link; setting one clears the other. */
+export type ProductImage = Pick<Product, 'image_url' | 'image_file_id'>;
 export const EDITABLE_PRODUCT_FIELDS = ['title', 'description', 'price', 'author', 'image_url', 'inventory'] as const;
 export type EditableProductField = (typeof EDITABLE_PRODUCT_FIELDS)[number];
 
@@ -77,8 +79,8 @@ export class ProductRepository extends Repository {
   }
   async create(p: ProductDraft): Promise<number> {
     const r = await this.run(
-      'INSERT INTO products (category_id, title, description, price, author, image_url, inventory) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      p.category_id, p.title, p.description, p.price, p.author, p.image_url, p.inventory,
+      'INSERT INTO products (category_id, title, description, price, author, image_url, image_file_id, inventory) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      p.category_id, p.title, p.description, p.price, p.author, p.image_url ?? '', p.image_file_id ?? '', p.inventory,
     );
     return r.meta.last_row_id;
   }
@@ -86,6 +88,9 @@ export class ProductRepository extends Repository {
   update(id: number, field: EditableProductField | 'category_id' | 'status', value: string | number) {
     if (![...EDITABLE_PRODUCT_FIELDS, 'category_id', 'status'].includes(field)) throw new Error(`bad field ${field}`);
     return this.run(`UPDATE products SET ${field} = ? WHERE id = ?`, value, id);
+  }
+  setImage(id: number, image: ProductImage) {
+    return this.run('UPDATE products SET image_url = ?, image_file_id = ? WHERE id = ?', image.image_url, image.image_file_id, id);
   }
   async count(): Promise<number> {
     return (await this.first<{ n: number }>('SELECT count(*) AS n FROM products'))!.n;

@@ -22,7 +22,10 @@ export interface Product {
   description: string;
   price: number;
   author: string;
+  /** Link given by the admin (shown as a link preview). */
   image_url: string;
+  /** Photo uploaded by the admin, stored by Telegram. Takes precedence over image_url. */
+  image_file_id: string;
   inventory: number;
   status: Toggle;
 }

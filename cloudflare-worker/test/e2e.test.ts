@@ -37,11 +37,11 @@ async function post(update: object, secret = SECRET) {
 }
 const text = (chat: number, t: string) =>
   post({ message: { message_id: ++messageId, from: { id: chat, first_name: `U${chat}` }, chat: { id: chat, type: 'private' }, text: t } });
-const photo = (chat: number) =>
+const photo = (chat: number, fileId = 'RECEIPT_BIG') =>
   post({
     message: {
       message_id: ++messageId, from: { id: chat, first_name: `U${chat}` }, chat: { id: chat, type: 'private' },
-      photo: [{ file_id: 'small', file_unique_id: 's', width: 1, height: 1 }, { file_id: 'RECEIPT_BIG', file_unique_id: 'b', width: 9, height: 9 }],
+      photo: [{ file_id: 'small', file_unique_id: 's', width: 1, height: 1 }, { file_id: fileId, file_unique_id: 'b', width: 9, height: 9 }],
     },
   });
 const press = (chat: number, data: string) =>
@@ -106,7 +106,11 @@ describe('shop bot end-to-end', () => {
     expect(lastText(ADMIN)).toContain('اضافه شد');
 
     await press(ADMIN, 'a:prod:add');
-    for (const t of ['IELTS <Book>', 'Great book', '۱۲۰,۰۰۰', 'Author', '2', '-']) await text(ADMIN, t);
+    for (const t of ['IELTS <Book>', 'Great book', '۱۲۰,۰۰۰', 'Author', '2']) await text(ADMIN, t);
+    await text(ADMIN, 'not an image');
+    expect(lastText(ADMIN)).toContain('تصویر دریافت نشد');
+    // No R2 needed: the uploaded photo is kept as a Telegram file_id.
+    await photo(ADMIN, 'PRODUCT_PHOTO');
     expect(lastText(ADMIN)).toContain('دسته‌بندی این محصول');
     await press(ADMIN, 'a:prod:newcat:1');
     expect(lastText(ADMIN)).toContain('IELTS &lt;Book&gt;');
@@ -120,6 +124,8 @@ describe('shop bot end-to-end', () => {
     expect(lastText(BUYER)).toContain('Books');
     await press(BUYER, 'qty:1:2');
     expect(lastText(BUYER)).toContain('240,000');
+    const card = sent(BUYER).filter((c) => c.method === 'sendPhoto').at(-1)!;
+    expect(card.params.photo).toBe('PRODUCT_PHOTO');
 
     await press(BUYER, 'add:1:3');
     expect(lastText(BUYER)).toContain('موجودی این محصول کافی نیست');
@@ -127,7 +133,8 @@ describe('shop bot end-to-end', () => {
     expect(lastText(BUYER)).toContain('به سبد خرید اضافه شد');
 
     await press(BUYER, 'cart');
-    expect(lastText(BUYER)).toContain('240,000');
+    expect(lastText(BUYER)).toContain('قیمت واحد: 120,000 تومان');
+    expect(lastText(BUYER)).toContain('جمع کل: 240,000 تومان');
 
     await press(BUYER, 'checkout');
     await text(BUYER, 'Ali');

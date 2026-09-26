@@ -8,7 +8,7 @@ import type { TelegramClient } from '../src/telegram/TelegramClient';
 import type { Update } from '../src/telegram/types';
 import { escapeHtml, money } from '../src/utils/format';
 import { formatPersianDate, parseAmount, tehranDayAndMonthStart, toEnglishDigits, toJalali } from '../src/utils/persian';
-import { productCard } from '../src/views/user';
+import { cartView, myOrdersView, productCard } from '../src/views/user';
 import { parseAdminIds } from '../src/deps';
 
 describe('persian utils', () => {
@@ -64,17 +64,39 @@ describe('cart helpers', () => {
   });
 });
 
+const PRODUCT = {
+  id: 1, category_id: 2, title: 'Book', description: 'd', price: 1000, author: '',
+  image_url: '', image_file_id: '', inventory: 5, status: 'enable' as const,
+};
+
 describe('keyboard & views', () => {
   it('rejects callback data over 64 bytes', () => {
     expect(() => button('x', 'a'.repeat(65))).toThrow();
   });
   it('escapes product fields in the card', () => {
     const view = productCard(
-      { id: 1, category_id: 2, title: '<script>', description: 'd', price: 1000, author: '', image_url: '', inventory: 5, status: 'enable' },
+      { ...PRODUCT, title: '<script>' },
       2,
     );
     expect(view.text).toContain('&lt;script&gt;');
     expect(view.text).toContain('2,000');
+    expect(view.photo).toBeUndefined();
+  });
+  it('shows an uploaded product photo as a photo card within the caption limit', () => {
+    const view = productCard({ ...PRODUCT, image_file_id: 'PHOTO', description: 'x'.repeat(3000) }, 1);
+    expect(view.photo).toBe('PHOTO');
+    expect(view.text.length).toBeLessThanOrEqual(1024);
+  });
+  it('lists the unit price on its own line in the cart and in orders', () => {
+    const line = { item_id: 3, product_id: 1, title: 'Book', price: 7_800_000, quantity: 3, inventory: 9 };
+    for (const text of [
+      cartView([line]).text,
+      myOrdersView([{ id: 1, user_id: 1, user_chat_id: 1, track_id: 'T', status: 'payed', stock_taken: 0, time: 0 }], new Map([[1, [line]]])).text,
+    ]) {
+      expect(text).toContain('💰 قیمت واحد: 7,800,000 تومان\n');
+      expect(text).toContain('🔢 تعداد: 3\n');
+      expect(text).toContain('جمع کل: 23,400,000 تومان');
+    }
   });
   it('parses admin ids', () => {
     expect(parseAdminIds(' 1, 2 ,x,')).toEqual([1, 2]);
@@ -101,6 +123,22 @@ describe('Router', () => {
   it('reports unhandled when a fallback declines, so routers can chain', async () => {
     const router = new Router().fallback(async () => false);
     expect(await router.dispatch(new BotContext(cbUpdate('zzz'), tg))).toBe(false);
+  });
+
+  it('edits a photo message in place and swaps between text and photo', async () => {
+    const calls: string[] = [];
+    const tg = new Proxy({}, { get: (_t, m) => async () => void calls.push(String(m)) }) as unknown as TelegramClient;
+    const onPhoto = cbUpdate('x');
+    onPhoto.callback_query!.message!.photo = [{ file_id: 'old', file_unique_id: 'u', width: 1, height: 1 }];
+
+    await new BotContext(onPhoto, tg).render({ text: 'card', photo: 'P' });
+    expect(calls).toEqual(['editMessagePhoto']);
+    calls.length = 0;
+    await new BotContext(onPhoto, tg).render({ text: 'list' });
+    expect(calls).toEqual(['deleteMessage', 'sendMessage']);
+    calls.length = 0;
+    await new BotContext(cbUpdate('x'), tg).render({ text: 'card', photo: 'P' });
+    expect(calls).toEqual(['deleteMessage', 'sendPhoto']);
   });
 
   it('marks admins from the configured ids', () => {

@@ -12,8 +12,6 @@ export class BotContext {
   readonly firstName: string;
   readonly text: string | undefined;
   readonly callbackData: string | undefined;
-  /** message_id of the message whose button was pressed (only for callbacks). */
-  readonly callbackMessageId: number | undefined;
   readonly isAdmin: boolean;
 
   constructor(
@@ -28,7 +26,6 @@ export class BotContext {
     this.firstName = from?.first_name ?? '';
     this.text = update.message?.text?.trim();
     this.callbackData = cb?.data;
-    this.callbackMessageId = cb?.message?.message_id;
     this.isAdmin = adminIds.includes(this.chatId);
   }
 
@@ -59,18 +56,29 @@ export class BotContext {
    * Photos can't be edited into text, so those are replaced.
    */
   async render(view: View): Promise<void> {
-    const messageId = this.callbackMessageId;
-    if (messageId === undefined || view.photo || view.keyboard && 'keyboard' in view.keyboard) {
-      return this.reply(view);
-    }
+    const message = this.update.callback_query?.message;
+    if (!message || (view.keyboard && 'keyboard' in view.keyboard)) return this.reply(view);
+
+    const pressedIsPhoto = Boolean(message.photo?.length);
+    const replace = async () => {
+      await this.tg.deleteMessage(this.chatId, message.message_id).catch(() => {});
+      await this.reply(view);
+    };
     try {
-      await this.tg.editMessageText(this.chatId, messageId, view.text, view.keyboard);
+      if (!view.photo && !pressedIsPhoto) {
+        await this.tg.editMessageText(this.chatId, message.message_id, view.text, view.keyboard);
+      } else if (view.photo && pressedIsPhoto && view.text.length <= PHOTO_CAPTION_LIMIT) {
+        // Photo → photo (e.g. changing the quantity on a product card): edit in place, no flicker.
+        await this.tg.editMessagePhoto(this.chatId, message.message_id, view.photo, view.text, view.keyboard);
+      } else {
+        // Text ↔ photo can't be edited into each other.
+        await replace();
+      }
     } catch (err) {
       if (!(err instanceof TelegramApiError)) throw err;
-      // "message is not modified" is harmless; anything else (e.g. the message is a photo) → send fresh.
+      // "message is not modified" is harmless; anything else (e.g. message too old to edit) → send fresh.
       if (err.description.includes('message is not modified')) return;
-      await this.tg.deleteMessage(this.chatId, messageId).catch(() => {});
-      await this.reply(view);
+      await replace();
     }
   }
 

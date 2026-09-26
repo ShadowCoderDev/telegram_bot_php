@@ -1,6 +1,6 @@
 import type { Deps } from '../deps';
 import { flip, type Session } from '../db/models';
-import { EDITABLE_PRODUCT_FIELDS, SETTING_KEYS, type EditableProductField, type ProductDraft, type SettingKey } from '../db/repositories';
+import { EDITABLE_PRODUCT_FIELDS, SETTING_KEYS, type EditableProductField, type ProductDraft, type ProductImage, type SettingKey } from '../db/repositories';
 import type { AdminOrderAction } from '../services/orderStatus';
 import type { BotContext } from '../telegram/BotContext';
 import { backRow, button } from '../telegram/keyboard';
@@ -202,19 +202,21 @@ async function closeDialogFor(adminChatId: number, d: Deps) {
   if (s?.flow === FLOW.dialog && s.data.buyerChatId) await d.dialogs.close(s.data.buyerChatId);
 }
 
-/** Accepts either an uploaded image (stored in R2) or an http(s) URL. */
-async function readImageUrl(ctx: BotContext, d: Deps): Promise<string | null> {
-  if (ctx.imageFileId) {
-    // Uploads need R2 for a public URL; without it only links are accepted.
-    return d.files ? d.files.publicUrl(await d.files.saveTelegramFile(ctx.imageFileId, 'products')) : null;
-  }
+/**
+ * Reads a product image: an uploaded photo is kept as its Telegram file_id (Telegram stores the
+ * file, so no R2 is needed); otherwise the text must be an http(s) link.
+ */
+function readImage(ctx: BotContext): ProductImage | null {
+  if (ctx.imageFileId) return { image_file_id: ctx.imageFileId, image_url: '' };
   try {
     const url = new URL(ctx.text ?? '');
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null;
+    return url.protocol === 'https:' || url.protocol === 'http:' ? { image_url: url.toString(), image_file_id: '' } : null;
   } catch {
     return null;
   }
 }
+
+const BAD_IMAGE = '❌ تصویر دریافت نشد.\nیک <b>عکس</b> بفرستید (یا یک لینک که با https:// شروع شود).';
 
 async function adminFlowStep(ctx: BotContext, s: Session<Data>, d: Deps): Promise<void> {
   const text = ctx.text ?? '';
@@ -252,12 +254,15 @@ async function adminFlowStep(ctx: BotContext, s: Session<Data>, d: Deps): Promis
     case FLOW.edit: {
       const field = s.step as EditableProductField;
       const productId = Number(s.data.productId);
-      let value: string | number | null;
-      if (field === 'image_url') value = await readImageUrl(ctx, d);
-      else if (field === 'price' || field === 'inventory') value = parseAmount(text);
-      else value = text || null;
-      if (value === null) return ctx.reply(v.prompt('❌ مقدار نامعتبر است. دوباره ارسال کنید.'));
-      await d.products.update(productId, field, value);
+      if (field === 'image_url') {
+        const image = readImage(ctx);
+        if (!image) return ctx.reply(v.prompt(BAD_IMAGE));
+        await d.products.setImage(productId, image);
+      } else {
+        const value = field === 'price' || field === 'inventory' ? parseAmount(text) : text || null;
+        if (value === null) return ctx.reply(v.prompt('❌ مقدار نامعتبر است. دوباره ارسال کنید.'));
+        await d.products.update(productId, field, value);
+      }
       await d.sessions.clear(ctx.chatId);
       await ctx.reply({ text: `✅ مقدار <b>${field}</b> محصول #${productId} بروزرسانی شد.` });
       const p = (await d.products.find(productId))!;
@@ -299,17 +304,17 @@ async function addProductStep(ctx: BotContext, s: Session<Data>, d: Deps, text: 
     case 'inventory': {
       const inventory = parseAmount(text);
       if (inventory === null) return ctx.reply(v.prompt('❌ لطفاً موجودی را فقط به صورت عدد وارد کنید.'));
-      return next('image', { ...data, inventory }, '<b>مرحله ۶:</b>\n\nتصویر محصول را ارسال کنید (Photo یا URL).\nبرای رد شدن <code>-</code> بفرستید.');
+      return next('image', { ...data, inventory }, '<b>مرحله ۶:</b>\n\n🖼 عکس محصول را بفرستید (یا لینک تصویر).\nبرای رد شدن <code>-</code> بفرستید.');
     }
     case 'image': {
-      const image_url = text === '-' ? '' : await readImageUrl(ctx, d);
-      if (image_url === null) return ctx.reply(v.prompt('❌ ورودی نامعتبر است. لطفاً یک تصویر یا یک URL صحیح ارسال کنید.'));
+      const image = text === '-' ? { image_url: '', image_file_id: '' } : readImage(ctx);
+      if (!image) return ctx.reply(v.prompt(BAD_IMAGE));
       const cats = await d.categories.list(true);
       if (!cats.length) {
         await d.sessions.clear(ctx.chatId);
         return ctx.reply(v.done('❌ هیچ دسته‌بندی فعالی وجود ندارد. ابتدا یک دسته‌بندی ایجاد کنید.'));
       }
-      await d.sessions.set(ctx.chatId, s.flow, 'category', { ...data, image_url });
+      await d.sessions.set(ctx.chatId, s.flow, 'category', { ...data, ...image });
       return ctx.reply(
         v.categoryPicker(cats, '<b>مرحله نهایی (۷):</b>\n\nدسته‌بندی این محصول را انتخاب کنید:', (c) => A.newProductCategory(c.id), [
           button('لغو عملیات ❌', A.cancel),
