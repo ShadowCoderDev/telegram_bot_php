@@ -1,0 +1,11 @@
+export interface Env {
+  DB: D1Database;
+  FILES: R2Bucket;
+  /** Secret: token from @BotFather. */
+  BOT_TOKEN: string;
+  /** Secret: echoed by Telegram in X-Telegram-Bot-Api-Secret-Token on every webhook call. */
+  WEBHOOK_SECRET: string;
+  /** Comma-separated numeric chat ids. */
+  ADMIN_CHAT_IDS: string;
+  TELEGRAM_API_BASE?: string;
+}
