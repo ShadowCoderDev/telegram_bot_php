@@ -12,6 +12,14 @@ import { heading, hint, quote, sections } from '../views/common';
 import * as v from '../views/user';
 
 export const CHECKOUT = 'checkout';
+const MIN_CLAIM_SECRET = 16;
+
+/** Constant-time comparison (via SHA-256 digests) so the secret can't be guessed byte by byte. */
+async function sameSecret(a: string, b: string): Promise<boolean> {
+  const digest = async (s: string) => new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)));
+  const [x, y] = await Promise.all([digest(a), digest(b)]);
+  return x.reduce((diff, byte, i) => diff | (byte ^ y[i]!), 0) === 0;
+}
 
 /** How long the amount shown at the payment step stays valid before prices are re-read. */
 export const PRICE_LOCK_MINUTES = 60;
@@ -21,8 +29,9 @@ const now = () => Math.floor(Date.now() / 1000);
 export function registerUserRoutes(router: Router, d: Deps): Router {
   const showHome = async (ctx: BotContext) => {
     await d.user(ctx);
-    await ctx.render(v.mainMenu(ctx.firstName));
+    await ctx.render(v.mainMenu(ctx.firstName, await shop()));
   };
+  const shop = () => d.settings.getMany(['shop_name', 'welcome_text']);
   const showShop = async (ctx: BotContext) => ctx.render(v.categoriesView(await d.categories.list(true)));
   const showCart = async (ctx: BotContext) => {
     const cart = await d.cart.contents(await d.user(ctx));
@@ -34,8 +43,8 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
     await ctx.render(v.myOrdersView(orders, await d.orders.linesFor(orders.map((o) => o.id))));
   };
   const showFaqs = async (ctx: BotContext) => ctx.render(v.faqsView(await d.faqs.list(true)));
-  const showSupport = async (ctx: BotContext) => ctx.render(v.supportView(await d.settings.get('support', 'پشتیبانی تنظیم نشده')));
-  const showHelp = async (ctx: BotContext) => ctx.render(v.helpView(await d.settings.get('help_text', 'راهنما هنوز تنظیم نشده است.')));
+  const showSupport = async (ctx: BotContext) => ctx.render(v.supportView(await d.settings.get('support')));
+  const showHelp = async (ctx: BotContext) => ctx.render(v.helpView(await d.settings.get('help_text')));
   const showProduct = async (ctx: BotContext, id: number, qty: number) => {
     const product = await d.products.findVisible(id);
     await ctx.render(product ? v.productCard(product, clampQty(qty, product.inventory)) : v.productNotFound());
@@ -61,6 +70,15 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
         await d.sessions.clear(ctx.chatId);
         await ctx.reply({ text: '✅ عملیات لغو شد.' });
         await showHome(ctx);
+      })
+      .text(/^\/claim(?:\s+(\S+))?$/, async (ctx, [secret]) => {
+        // A seller becomes admin of their own bot by sending the WEBHOOK_SECRET they chose at deploy time.
+        if (d.webhookSecret.length < MIN_CLAIM_SECRET) {
+          return ctx.reply({ text: `⚠️ WEBHOOK_SECRET باید حداقل ${MIN_CLAIM_SECRET} کاراکتر باشد تا /claim فعال شود.` });
+        }
+        if (!secret || !(await sameSecret(secret, d.webhookSecret))) return ctx.reply({ text: '❌ کد اشتباه است.' });
+        await d.settings.addAdmin(ctx.chatId);
+        await ctx.reply({ text: '✅ شما ادمین این ربات شدید. برای ورود به پنل /start را بزنید.' });
       })
       .text(v.MENU.shop, showShop)
       .text(v.MENU.cart, showCart)
@@ -107,7 +125,7 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
         await abortCheckout(ctx.chatId, d);
         await d.cart.clear(await d.user(ctx));
         await ctx.render({ text: sections(heading('🗑', 'سبد خرید خالی شد'), hint('هر وقت خواستید دوباره خرید کنید.')) });
-        await ctx.reply(v.mainMenu(ctx.firstName));
+        await ctx.reply(v.mainMenu(ctx.firstName, await shop()));
       })
       .callback(CB.checkout, async (ctx) => {
         const user = await d.user(ctx);
@@ -128,7 +146,7 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
       .fallback(async (ctx) => {
         if (ctx.isCallback) {
           // A button from an old message (or the previous PHP bot) – just show the menu.
-          return ctx.reply(v.mainMenu(ctx.firstName));
+          return ctx.reply(v.mainMenu(ctx.firstName, await shop()));
         }
         const session = await d.sessions.get<v.CheckoutData>(ctx.chatId);
         if (session?.flow === CHECKOUT) return checkoutStep(ctx, session, d);
@@ -164,7 +182,7 @@ async function showPayment(ctx: BotContext, d: Deps, data: v.CheckoutData): Prom
   await d.orders.lockPrices(data.orderId);
   const { total } = await d.orders.lockedTotal(data.orderId);
   await d.sessions.set(ctx.chatId, CHECKOUT, 'receipt', { ...data, total, lockedAt: now() });
-  const bank = await d.settings.get('bank_info', 'شماره کارت هنوز تنظیم نشده است.');
+  const bank = await d.settings.get('bank_info');
   await ctx.reply(v.checkoutPrompts.payment(bank, total, PRICE_LOCK_MINUTES));
 }
 

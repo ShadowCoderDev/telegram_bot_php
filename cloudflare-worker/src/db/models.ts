@@ -28,6 +28,10 @@ export interface Category {
   status: Toggle;
 }
 
+export interface CategoryWithCount extends Category {
+  product_count: number;
+}
+
 export interface Product {
   id: number;
   category_id: number | null;

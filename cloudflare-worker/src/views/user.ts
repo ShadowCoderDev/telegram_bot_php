@@ -25,18 +25,27 @@ export const persistentKeyboard = (): View => ({
   keyboard: replyKeyboard([[MENU.shop], [MENU.cart, MENU.orders], [MENU.support, MENU.faqs], [MENU.home]]),
 });
 
-export const mainMenu = (firstName: string): View => ({
-  text: sections(
-    `👋 سلام <b>${e(firstName)}</b>!\nبه فروشگاه آنلاین مدرس انگلیسی خوش آمدید ❤️`,
-    quote('🎓 دوره‌های آنلاین\n📚 کتاب‌های تخصصی آیلتس'),
-    '👇 یکی از گزینه‌های زیر را انتخاب کنید:',
-  ),
-  keyboard: inline(
+/** The shop's own name and welcome text, set by the seller in the admin settings. */
+export interface ShopInfo {
+  shop_name: string;
+  welcome_text: string;
+}
+
+export const mainKeyboard = () =>
+  inline(
     [button('🛍️ خرید محصول', CB.shop, 'primary')],
     [button('🛒 سبد خرید', CB.cart), button('✉️ سفارشات من', CB.myOrders)],
     [button('⚡️ راهنمای سریع', CB.help), button('🗣️ پشتیبانی', CB.support)],
     [button('❓ سوالات متداول', CB.faqs)],
+  );
+
+export const mainMenu = (firstName: string, shop: ShopInfo): View => ({
+  text: sections(
+    `👋 سلام <b>${e(firstName)}</b>!\n🛍 <b>${e(shop.shop_name)}</b>`,
+    quote(e(shop.welcome_text)),
+    '👇 یکی از گزینه‌های زیر را انتخاب کنید:',
   ),
+  keyboard: mainKeyboard(),
 });
 
 export const categoriesView = (categories: Category[]): View =>
@@ -287,5 +296,5 @@ export const receiptAccepted = (trackId: string, d: CheckoutData, lines: OrderLi
 
 export const unknownCommand = (): View => ({
   text: sections('🤔 متوجه نشدم!', hint('از دکمه‌های زیر استفاده کنید.')),
-  keyboard: mainMenu('').keyboard,
+  keyboard: mainKeyboard(),
 });
