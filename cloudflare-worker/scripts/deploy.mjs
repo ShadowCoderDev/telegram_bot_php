@@ -133,7 +133,7 @@ async function main() {
     else if (/enable R2|10042|payment/i.test(r.out)) {
       useR2 = false;
       warn('R2 is not enabled on this Cloudflare account – continuing without it.');
-      warn('Receipts still work (kept as Telegram file ids); product images must be given as URLs.');
+      warn('Everything still works: receipts and product photos are kept as Telegram file ids. R2 only archives receipts.');
     } else fail(`creating the R2 bucket failed:\n${r.out}`);
   } else ok('skipped');
 

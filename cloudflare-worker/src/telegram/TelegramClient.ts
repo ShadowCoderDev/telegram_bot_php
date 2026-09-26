@@ -65,6 +65,16 @@ export class TelegramClient {
     return this.call('sendPhoto', { chat_id: chatId, photo, caption, parse_mode: 'HTML', reply_markup: markup });
   }
 
+  /** Replaces the photo and caption of a photo message in place. */
+  editMessagePhoto(chatId: number, messageId: number, photo: string, caption: string, markup?: ReplyMarkup) {
+    return this.call('editMessageMedia', {
+      chat_id: chatId,
+      message_id: messageId,
+      media: { type: 'photo', media: photo, caption, parse_mode: 'HTML' },
+      reply_markup: markup,
+    });
+  }
+
   deleteMessage(chatId: number, messageId: number) {
     return this.call('deleteMessage', { chat_id: chatId, message_id: messageId });
   }
