@@ -1,5 +1,5 @@
 import type { Category, Faq, Order, OrderLine, Product } from '../db/models';
-import { cartTotal, type StockProblem } from '../services/CartService';
+import { MAX_QTY, cartTotal, type StockProblem } from '../services/CartService';
 import { STATUS_FA } from '../services/orderStatus';
 import { backRow, button, inline, replyKeyboard } from '../telegram/keyboard';
 import type { View } from '../telegram/types';
@@ -54,7 +54,9 @@ export const categoryProductsView = (category: Category | null, products: Produc
       ? sections(`<b>${name}</b>`, '👇 محصول مورد نظرتان را انتخاب کنید:', hint('💡 با انتخاب هر محصول، قیمت و جزئیات کامل آن نمایش داده می‌شود.'))
       : sections(`<b>${name}</b>`, '😕 فعلاً محصول فعالی در این دسته‌بندی وجود ندارد.'),
     keyboard: inline(
-      ...products.map((p) => [button(`${truncate(p.title, 30)} · ${money(p.price)} ت`, CB.product(p.id))]),
+      ...products.map((p) => [
+        button(p.inventory > 0 ? `${truncate(p.title, 30)} · ${money(p.price)} ت` : `⛔ ${truncate(p.title, 30)} · ناموجود`, CB.product(p.id)),
+      ]),
       backRow(CB.shop, '🔙 دسته‌بندی‌ها'),
     ),
   };
@@ -68,12 +70,18 @@ export const productNotFound = (): View => ({
 const CAPTION_LIMIT = 1024;
 
 const stockLine = (inventory: number): string =>
-  inventory <= 0 ? '⛔ <b>ناموجود</b>' : inventory <= 5 ? `🔥 فقط <b>${fa(inventory)}</b> عدد باقی مانده` : '✅ موجود در انبار';
+  inventory <= 0
+    ? `⛔ <b>ناموجود</b>\n${hint('به‌زودی دوباره موجود می‌شود؛ بعداً سر بزنید.')}`
+    : inventory <= 5
+      ? `🔥 فقط <b>${fa(inventory)}</b> عدد باقی مانده`
+      : '✅ موجود در انبار';
 
 export const productCard = (p: Product, qty: number): View => {
   const head = sections(
     `📘 <b>${e(p.title)}</b>` + (p.author ? `\n✍️ ${hint(e(p.author))}` : ''),
-    quote(`💰 قیمت واحد: <b>${toman(p.price)}</b>\n🔢 تعداد: <b>${fa(qty)}</b>\n💵 جمع: <b>${toman(p.price * qty)}</b>`),
+    p.inventory > 0
+      ? quote(`💰 قیمت واحد: <b>${toman(p.price)}</b>\n🔢 تعداد: <b>${fa(qty)}</b>\n💵 جمع: <b>${toman(p.price * qty)}</b>`)
+      : quote(`💰 قیمت: <b>${toman(p.price)}</b>`),
     stockLine(p.inventory),
   );
   const descTitle = '\n\n📝 <b>توضیحات</b>\n';
@@ -83,11 +91,21 @@ export const productCard = (p: Product, qty: number): View => {
     desc = e(truncate(p.description, CAPTION_LIMIT - head.length - descTitle.length - 80));
   }
   const body = head + (p.description ? descTitle + expandable(desc) : '');
-  const keyboard = inline(
-    [button('➖', CB.qty(p.id, qty - 1)), button(fa(qty), CB.noop), button('➕', CB.qty(p.id, qty + 1))],
-    [button('🛒 افزودن به سبد خرید', CB.add(p.id, qty), 'success')],
-    backRow(CB.category(p.category_id ?? 0), '🔙 بازگشت به لیست'),
-  );
+  const back = backRow(CB.category(p.category_id ?? 0), '🔙 بازگشت به لیست');
+  const max = Math.min(MAX_QTY, p.inventory);
+  // Out of stock: nothing to choose or add – only the way back.
+  const keyboard =
+    p.inventory <= 0
+      ? inline(back)
+      : inline(
+          [
+            button('➖', qty > 1 ? CB.qty(p.id, qty - 1) : CB.noop),
+            button(fa(qty), CB.noop),
+            button('➕', qty < max ? CB.qty(p.id, qty + 1) : CB.noop),
+          ],
+          [button('🛒 افزودن به سبد خرید', CB.add(p.id, qty), 'success')],
+          back,
+        );
   if (p.image_file_id) return { photo: p.image_file_id, text: body, keyboard };
   // A zero-width link makes Telegram show a linked image as a preview above the text.
   const preview = p.image_url ? `<a href="${e(p.image_url)}">&#8203;</a>` : '';
@@ -129,8 +147,8 @@ export const cartView = (lines: OrderLine[]): View => ({
 export const stockProblemsView = (problems: StockProblem[]): View => ({
   text: sections(
     heading('⚠️', 'کمبود موجودی'),
-    'موجودی این محصولات از تعداد درون سبد شما کمتر است:',
-    quote(problems.map((p) => `📦 ${e(p.title)} — موجودی: <b>${fa(p.inventory)}</b>`).join('\n')),
+    'این محصولات به تعداد درون سبد شما موجود نیستند:',
+    quote(problems.map((p) => (p.available ? `📦 ${e(p.title)} — موجودی: <b>${fa(p.inventory)}</b>` : `📦 ${e(p.title)} — <b>دیگر فروخته نمی‌شود</b>`)).join('\n')),
     hint('لطفاً سبد خرید را ویرایش کنید و دوباره تلاش کنید.'),
   ),
   keyboard: inline([button('🛒 ویرایش سبد خرید', CB.cart, 'primary')]),
@@ -219,6 +237,24 @@ export const checkoutPrompts = {
       'زمان اعتبار مبلغ قبلی تمام شده یا سبد خرید تغییر کرده است. مبلغ جدید را ببینید و رسید <b>همین مبلغ</b> را بفرستید.',
     ),
   }),
+  tooLong: (max: number): View => ({ text: `⚠️ متن طولانی است؛ حداکثر ${fa(max)} کاراکتر بفرستید.` }),
+  addressTooShort: (): View => ({ text: sections('⚠️ آدرس خیلی کوتاه است.', hint('آدرس کامل شامل شهر، خیابان و پلاک را بفرستید.')) }),
+  tooManyAwaiting: (max: number): View => ({
+    text: sections(
+      heading('⏳', 'سفارش‌های قبلی شما در حال بررسی است'),
+      `شما ${fa(max)} سفارش پرداخت‌شده دارید که هنوز تایید نشده‌اند.`,
+      hint('بعد از بررسی آن‌ها می‌توانید سفارش جدید ثبت کنید.'),
+    ),
+    keyboard: inline([button('✉️ سفارشات من', CB.myOrders)], homeRow()),
+  }),
+  receiptReused: (): View => ({
+    text: sections(
+      heading('⚠️', 'این رسید قبلاً استفاده شده'),
+      'این عکس قبلاً برای سفارش دیگری ارسال شده است.',
+      hint('لطفاً عکس رسید پرداخت همین سفارش را بفرستید.'),
+    ),
+  }),
+  alreadyReceived: (): View => ({ text: sections('✅ رسید شما قبلاً دریافت شده است.', hint('نیازی به ارسال دوباره نیست.')) }),
   cancelledByCartChange: (): View => ({
     text: sections(heading('ℹ️', 'سبد خرید تغییر کرد'), hint('فرایند تکمیل خرید لغو شد؛ برای ادامه دوباره «تکمیل خرید» را بزنید.')),
   }),

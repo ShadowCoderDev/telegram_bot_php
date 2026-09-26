@@ -10,7 +10,7 @@ export interface FullOrder {
 
 export type ActionResult =
   | { ok: true; order: FullOrder }
-  | { ok: false; reason: 'not_found' | 'invalid_transition' }
+  | { ok: false; reason: 'not_found' | 'invalid_transition' | 'already_changed' }
   | { ok: false; reason: 'no_stock'; problems: OrderLine[] };
 
 export class OrderService {
@@ -35,7 +35,9 @@ export class OrderService {
       if (problems.length) return { ok: false, reason: 'no_stock', problems };
     }
     try {
-      await this.orders.changeStatusWithStock(orderId, plan.status, plan.stock);
+      const changed = await this.orders.changeStatusWithStock(orderId, full.order.status, plan.status, plan.stock);
+      // Someone else changed the order between our read and write (double click, second admin).
+      if (!changed) return { ok: false, reason: 'already_changed' };
     } catch (err) {
       if (String(err).includes('CHECK constraint')) {
         const fresh = await this.orders.lines(orderId);

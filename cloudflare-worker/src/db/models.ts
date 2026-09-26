@@ -5,7 +5,20 @@ export interface UserRow {
   id: number;
   chat_id: number;
   name: string;
+  username: string;
+  /** 'disable' = blocked by an admin. */
   status: Toggle;
+  created_at: number;
+}
+
+/** A customer row with purchase statistics, for the admin's customer list. */
+export interface CustomerSummary extends UserRow {
+  orders_count: number;
+  /** Sum of approved and sent orders. */
+  total_spent: number;
+  /** Orders paid but not yet reviewed by an admin. */
+  awaiting_review: number;
+  last_activity: number;
 }
 
 export interface Category {
@@ -48,6 +61,8 @@ export interface OrderLine {
   title: string;
   price: number;
   inventory: number;
+  /** 1 when the product is still for sale (product and its category enabled). */
+  available: number;
 }
 
 export interface OrderDetails {
@@ -58,6 +73,8 @@ export interface OrderDetails {
   phone_number: string;
   receipt_file_id: string | null;
   receipt_r2_key: string | null;
+  /** Telegram file_unique_id of the receipt photo; one receipt can back only one order. */
+  receipt_unique_id: string | null;
 }
 
 export interface Faq {

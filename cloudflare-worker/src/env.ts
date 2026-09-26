@@ -9,4 +9,6 @@ export interface Env {
   /** Comma-separated numeric chat ids. */
   ADMIN_CHAT_IDS: string;
   TELEGRAM_API_BASE?: string;
+  /** Max updates per chat in 10 seconds before the bot stops answering that chat (default 30). */
+  FLOOD_LIMIT?: string;
 }

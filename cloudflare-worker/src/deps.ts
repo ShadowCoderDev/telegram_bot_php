@@ -6,6 +6,7 @@ import {
   ProductRepository,
   SessionRepository,
   SettingsRepository,
+  UpdateLogRepository,
   UserRepository,
 } from './db/repositories';
 import type { UserRow } from './db/models';
@@ -34,13 +35,15 @@ export function createDeps(env: Env, publicOrigin: string) {
     settings: new SettingsRepository(env.DB),
     sessions: new SessionRepository(env.DB),
     dialogs: new DialogRepository(env.DB),
+    updateLog: new UpdateLogRepository(env.DB),
+    floodLimit: Number(env.FLOOD_LIMIT) || 30,
     cart: new CartService(orders, products),
     orderService: new OrderService(orders),
     files: env.FILES ? new FileStore(env.FILES, tg, publicOrigin) : null,
     adminIds: parseAdminIds(env.ADMIN_CHAT_IDS),
     /** Finds the shopper's row, creating it on first contact. */
-    async user(chatId: number, name: string): Promise<UserRow> {
-      return (await users.findByChatId(chatId)) ?? users.upsert(chatId, name);
+    async user(ctx: { chatId: number; firstName: string; username: string }): Promise<UserRow> {
+      return (await users.findByChatId(ctx.chatId)) ?? users.upsert(ctx.chatId, ctx.firstName, ctx.username);
     },
   };
 }

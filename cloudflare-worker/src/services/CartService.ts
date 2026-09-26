@@ -3,7 +3,8 @@ import type { OrderRepository, ProductRepository } from '../db/repositories';
 import { generateTrackId } from '../utils/trackId';
 
 export const MAX_QTY = 99;
-export const clampQty = (n: number): number => Math.max(1, Math.min(MAX_QTY, Math.trunc(n) || 1));
+/** 1 … min(99, stock). `max` is the stock left; with no stock the result is still 1 (nothing is sold anyway). */
+export const clampQty = (n: number, max = MAX_QTY): number => Math.max(1, Math.min(MAX_QTY, max, Math.trunc(n) || 1));
 
 export type AddResult =
   | { ok: true; qty: number }
@@ -13,6 +14,8 @@ export type AddResult =
 export interface StockProblem {
   title: string;
   inventory: number;
+  /** False when the product was disabled (or its category was) after it went into the cart. */
+  available: boolean;
 }
 
 export class CartService {
@@ -37,8 +40,8 @@ export class CartService {
   }
 
   async add(user: UserRow, productId: number, qty: number): Promise<AddResult> {
-    const product = await this.products.find(productId);
-    if (!product || product.status !== 'enable') return { ok: false, reason: 'not_found' };
+    const product = await this.products.findVisible(productId);
+    if (!product) return { ok: false, reason: 'not_found' };
     const cart = await this.openCart(user);
     const inCart = await this.orders.quantityInCart(cart.id, productId);
     if (product.inventory < inCart + qty) return { ok: false, reason: 'no_stock', product, inCart };
@@ -68,4 +71,6 @@ export const cartTotal = (lines: Pick<OrderLine, 'price' | 'quantity'>[]): numbe
   lines.reduce((sum, l) => sum + l.price * l.quantity, 0);
 
 export const stockProblems = (lines: OrderLine[]): StockProblem[] =>
-  lines.filter((l) => l.inventory < l.quantity).map(({ title, inventory }) => ({ title, inventory }));
+  lines
+    .filter((l) => !l.available || l.inventory < l.quantity)
+    .map(({ title, inventory, available }) => ({ title, inventory, available: Boolean(available) }));

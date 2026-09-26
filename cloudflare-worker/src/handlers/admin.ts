@@ -10,7 +10,8 @@ import { escapeHtml as e, money } from '../utils/format';
 import { parseAmount, tehranDayAndMonthStart } from '../utils/persian';
 import * as v from '../views/admin';
 import { CB } from '../views/callbacks';
-import { heading, hint, progress, quote, sections } from '../views/common';
+import { fa, heading, hint, progress, quote, sections } from '../views/common';
+import { LIMITS, charCount } from '../limits';
 
 const A = CB.admin;
 
@@ -22,6 +23,7 @@ const FLOW = {
   product: 'add_product',
   edit: 'edit_product',
   dialog: 'dialog',
+  findCustomer: 'find_customer',
 } as const;
 const ADMIN_FLOWS: readonly string[] = Object.values(FLOW);
 
@@ -46,6 +48,33 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
   const showOrder = async (ctx: BotContext, id: number) => {
     const full = await d.orderService.load(id);
     await ctx.render(full ? v.orderView(full) : v.done('❌ سفارش یافت نشد.'));
+  };
+  const showProducts = async (ctx: BotContext, page: number) => {
+    const total = await d.products.count();
+    const p = clampPage(page, total);
+    await ctx.render(v.productsList(await d.products.listPage(v.PAGE_SIZE, p * v.PAGE_SIZE), p, total));
+  };
+  const showOrders = async (ctx: BotContext, page: number) => {
+    const total = await d.orders.countPlaced();
+    const p = clampPage(page, total);
+    await ctx.render(v.ordersList(await d.orders.placedPage(v.PAGE_SIZE, p * v.PAGE_SIZE), p, total));
+  };
+  const showCustomers = async (ctx: BotContext, page: number) => {
+    const total = await d.users.count();
+    const p = clampPage(page, total);
+    await ctx.render(v.customersList(await d.users.customersPage(v.PAGE_SIZE, p * v.PAGE_SIZE), p, total));
+  };
+  const showCustomer = async (ctx: BotContext, userId: number, page: number) => {
+    const c = await d.users.customer(userId);
+    if (!c) return ctx.render(v.done('❌ مشتری یافت نشد.'));
+    const p = clampPage(page, c.orders_count);
+    const [contact, orders] = await Promise.all([d.users.lastContact(userId), d.orders.placedPage(v.PAGE_SIZE, p * v.PAGE_SIZE, userId)]);
+    await ctx.render(v.customerView(c, contact, orders, p, d.adminIds.includes(c.chat_id)));
+  };
+  const openDialog = async (ctx: BotContext, buyerChatId: number, orderId: number, name: string) => {
+    await d.dialogs.open({ buyer_chat_id: buyerChatId, admin_chat_id: ctx.chatId, order_id: orderId });
+    await d.sessions.set(ctx.chatId, FLOW.dialog, 'await', { buyerChatId, orderId });
+    await ctx.reply(v.dialogOpened(buyerChatId, name));
   };
   const start = async (ctx: BotContext, flow: string, step: string, data: Data, message: string | View) => {
     await d.sessions.set(ctx.chatId, flow, step, data);
@@ -118,7 +147,8 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
       })
 
       /* ----- products ----- */
-      .callback(A.products, async (ctx) => ctx.render(v.productsList(await d.products.listAll())))
+      .callback(A.products, (ctx) => showProducts(ctx, 0))
+      .callback(/^a:prods:(\d+)$/, (ctx, [page]) => showProducts(ctx, Number(page)))
       .callback(A.addProduct, (ctx) => start(ctx, FLOW.product, 'title', {}, PRODUCT_STEP(1, '📘 <b>نام</b> محصول را بفرستید:')))
       .callback(/^a:prod:(\d+)$/, (ctx, [id]) => showProduct(ctx, Number(id)))
       .callback(/^a:prod:edit:(\d+)$/, (ctx, [id]) => ctx.render(v.productEditMenu(Number(id))))
@@ -151,7 +181,8 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
       })
 
       /* ----- orders ----- */
-      .callback(A.orders, async (ctx) => ctx.render(v.ordersList(await d.orders.recentNonPending())))
+      .callback(A.orders, (ctx) => showOrders(ctx, 0))
+      .callback(/^a:orders:(\d+)$/, (ctx, [page]) => showOrders(ctx, Number(page)))
       .callback(/^a:order:(\d+)$/, (ctx, [id]) => showOrder(ctx, Number(id)))
       .callback(/^a:order:(approve|reject|send):(\d+)$/, async (ctx, [action, id]) => {
         const result = await d.orderService.apply(Number(id), action as AdminOrderAction);
@@ -159,6 +190,11 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
           await ctx.render(v.orderView(result.order));
           await notifyBuyer(ctx, result.order.order.user_chat_id, result.order.order.track_id, action as AdminOrderAction);
           return;
+        }
+        if (result.reason === 'already_changed') {
+          // A double click or another admin got there first; show the order as it is now.
+          await ctx.reply({ text: 'ℹ️ این سفارش همین حالا تغییر کرده بود؛ وضعیت فعلی:' });
+          return showOrder(ctx, Number(id));
         }
         const msg =
           result.reason === 'no_stock'
@@ -170,13 +206,35 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
         await ctx.reply({ text: msg });
       })
 
+      /* ----- customers ----- */
+      .callback(A.customers, (ctx) => showCustomers(ctx, 0))
+      .callback(A.findCustomer, (ctx) => start(ctx, FLOW.findCustomer, 'query', {}, v.CUSTOMER_SEARCH_PROMPT))
+      .callback(/^a:users:(\d+)$/, (ctx, [page]) => showCustomers(ctx, Number(page)))
+      .callback(/^a:user:(\d+)$/, (ctx, [id]) => showCustomer(ctx, Number(id), 0))
+      .callback(/^a:user:(\d+):(\d+)$/, (ctx, [id, page]) => showCustomer(ctx, Number(id), Number(page)))
+      .callback(/^a:user:block:(\d+)$/, async (ctx, [id]) => {
+        const user = await d.users.find(Number(id));
+        if (!user) return ctx.render(v.done('❌ مشتری یافت نشد.'));
+        if (d.adminIds.includes(user.chat_id)) return ctx.reply({ text: '⚠️ ادمین را نمی‌توان مسدود کرد.' });
+        const status = flip(user.status);
+        await d.users.setStatus(user.id, status);
+        // A blocked customer loses any open conversation with the admin.
+        if (status === 'disable') await d.dialogs.close(user.chat_id);
+        await ctx.reply({ text: status === 'disable' ? `🚫 ${e(user.name)} مسدود شد.` : `✅ ${e(user.name)} از حالت مسدود خارج شد.` });
+        await showCustomer(ctx, user.id, 0);
+      })
+      .callback(/^a:user:msg:(\d+)$/, async (ctx, [id]) => {
+        const user = await d.users.find(Number(id));
+        if (!user) return ctx.render(v.done('❌ مشتری یافت نشد.'));
+        await openDialog(ctx, user.chat_id, 0, user.name);
+      })
+
       /* ----- admin ↔ buyer dialog ----- */
       .callback(/^a:dialog:(\d+)$/, async (ctx, [id]) => {
         const order = await d.orders.find(Number(id));
         if (!order) return ctx.reply({ text: '❌ سفارش یافت نشد.' });
-        await d.dialogs.open({ buyer_chat_id: order.user_chat_id, admin_chat_id: ctx.chatId, order_id: order.id });
-        await d.sessions.set(ctx.chatId, FLOW.dialog, 'await', { buyerChatId: order.user_chat_id, orderId: order.id });
-        await ctx.reply(v.dialogOpened(order.user_chat_id));
+        const buyer = await d.users.find(order.user_id);
+        await openDialog(ctx, order.user_chat_id, order.id, buyer?.name ?? '');
       })
       .callback(/^a:dialog:close:(\d+)$/, async (ctx, [buyer]) => {
         await d.dialogs.close(Number(buyer));
@@ -223,6 +281,18 @@ function readImage(ctx: BotContext): ProductImage | null {
   }
 }
 
+const clampPage = (page: number, total: number) => Math.max(0, Math.min(page, v.pageCount(total) - 1));
+const tooLongText = (max: number) => `⚠️ متن طولانی است؛ حداکثر ${fa(max)} کاراکتر بفرستید.`;
+
+/** Validates an edited product field; returns the problem to show, or null. */
+function fieldProblem(field: EditableProductField, value: string | number): string | null {
+  const max = { title: LIMITS.productTitle, description: LIMITS.productDescription, author: LIMITS.author } as Record<string, number>;
+  if (typeof value === 'string' && max[field] && charCount(value) > max[field]!) return tooLongText(max[field]!);
+  if (field === 'price' && Number(value) > LIMITS.maxPrice) return '⚠️ این قیمت بیش از حد بزرگ است.';
+  if (field === 'inventory' && Number(value) > LIMITS.maxInventory) return `⚠️ موجودی حداکثر ${fa(LIMITS.maxInventory)} است.`;
+  return null;
+}
+
 const BAD_IMAGE = '❌ تصویر دریافت نشد.\nیک <b>عکس</b> بفرستید (یا یک لینک که با https:// شروع شود).';
 
 async function adminFlowStep(ctx: BotContext, s: Session<Data>, d: Deps): Promise<void> {
@@ -231,10 +301,23 @@ async function adminFlowStep(ctx: BotContext, s: Session<Data>, d: Deps): Promis
     d.sessions.set(ctx.chatId, s.flow, step, data).then(() => ctx.reply(typeof message === 'string' ? v.prompt(message) : message));
   const finish = (message: string) => d.sessions.clear(ctx.chatId).then(() => ctx.reply(v.done(message)));
   const needText = () => ctx.reply(v.prompt('⚠️ لطفاً یک متن ارسال کنید.'));
+  const tooLong = async (max: number) => {
+    if (charCount(text) <= max) return false;
+    await ctx.reply(v.prompt(tooLongText(max)));
+    return true;
+  };
 
   switch (s.flow) {
+    case FLOW.findCustomer: {
+      if (!text) return needText();
+      if (await tooLong(LIMITS.search)) return;
+      await d.sessions.clear(ctx.chatId);
+      return ctx.reply(v.customerSearchResults(text, await d.users.searchCustomers(text)));
+    }
+
     case FLOW.setting: {
       if (!text) return needText();
+      if (await tooLong(LIMITS.setting)) return;
       await d.settings.set(s.data.key as SettingKey, text);
       await d.sessions.clear(ctx.chatId);
       await ctx.reply({ text: '✅ تنظیمات با موفقیت به‌روزرسانی شد.' });
@@ -243,6 +326,7 @@ async function adminFlowStep(ctx: BotContext, s: Session<Data>, d: Deps): Promis
 
     case FLOW.faq: {
       if (!text) return needText();
+      if (await tooLong(s.step === 'question' ? LIMITS.faqQuestion : LIMITS.faqAnswer)) return;
       if (s.step === 'question') return next('answer', { question: text }, FAQ_STEP(2, '✅ حالا <b>پاسخ</b> این سوال را بفرستید:'));
       await d.faqs.create(String(s.data.question), text);
       return finish(sections(heading('✅', 'سوال جدید اضافه شد'), quote(e(String(s.data.question)))));
@@ -250,6 +334,7 @@ async function adminFlowStep(ctx: BotContext, s: Session<Data>, d: Deps): Promis
 
     case FLOW.category: {
       if (!text) return needText();
+      if (await tooLong(s.step === 'name' ? LIMITS.categoryName : LIMITS.categoryIcon)) return;
       if (s.step === 'name') return next('icon', { name: text }, CATEGORY_STEP(2, `🎨 یک <b>ایموجی</b> برای دسته‌بندی بفرستید.\n${hint('مثال: 📚  🎧  ✨')}`));
       await d.categories.create(String(s.data.name), text);
       return finish(sections(heading('✅', 'دسته‌بندی اضافه شد'), quote(`${e(text)} <b>${e(String(s.data.name))}</b>`)));
@@ -268,6 +353,8 @@ async function adminFlowStep(ctx: BotContext, s: Session<Data>, d: Deps): Promis
       } else {
         const value = field === 'price' || field === 'inventory' ? parseAmount(text) : text || null;
         if (value === null) return ctx.reply(v.prompt('❌ مقدار نامعتبر است. دوباره ارسال کنید.'));
+        const problem = fieldProblem(field, value);
+        if (problem) return ctx.reply(v.prompt(problem));
         await d.products.update(productId, field, value);
       }
       await d.sessions.clear(ctx.chatId);
@@ -278,12 +365,13 @@ async function adminFlowStep(ctx: BotContext, s: Session<Data>, d: Deps): Promis
 
     case FLOW.dialog: {
       const buyer = Number(s.data.buyerChatId);
+      if (charCount(text || ctx.caption || '') > LIMITS.dialog) return ctx.reply(v.prompt(tooLongText(LIMITS.dialog)));
       const photo = ctx.update.message?.photo?.at(-1)?.file_id;
       const header = '📣 <b>پیام از پشتیبانی:</b>\n\n';
       if (photo) await ctx.sendTo(buyer, { photo, text: header + e(ctx.caption) });
       else if (text) await ctx.sendTo(buyer, { text: header + e(text) });
       else return ctx.reply(v.prompt('⚠️ فقط متن یا عکس را بفرستید.'));
-      return ctx.reply({ ...v.dialogOpened(buyer), text: '✅ پیام برای خریدار ارسال شد.' });
+      return ctx.reply({ ...v.dialogOpened(buyer, ''), text: '✅ پیام برای خریدار ارسال شد.' });
     }
   }
 }
@@ -296,21 +384,26 @@ async function addProductStep(ctx: BotContext, s: Session<Data>, d: Deps, text: 
   switch (s.step) {
     case 'title':
       if (!text) break;
+      if (charCount(text) > LIMITS.productTitle) return ctx.reply(v.prompt(tooLongText(LIMITS.productTitle)));
       return next('description', { ...data, title: text }, PRODUCT_STEP(2, '💬 <b>توضیحات</b> محصول را بفرستید:'));
     case 'description':
       if (!text) break;
+      if (charCount(text) > LIMITS.productDescription) return ctx.reply(v.prompt(tooLongText(LIMITS.productDescription)));
       return next('price', { ...data, description: text }, PRODUCT_STEP(3, `💰 <b>قیمت</b> را به تومان بفرستید.\n${hint('فقط عدد؛ مثال: 780000')}`));
     case 'price': {
       const price = parseAmount(text);
       if (price === null) return ctx.reply(v.prompt('❌ لطفاً قیمت را فقط به صورت عدد وارد کنید.'));
+      if (fieldProblem('price', price)) return ctx.reply(v.prompt(fieldProblem('price', price)!));
       return next('author', { ...data, price }, PRODUCT_STEP(4, `${hint(`✔️ قیمت: ${money(price)} تومان`)}\n\n✍️ نام <b>نویسنده/مدرس</b> را بفرستید:`));
     }
     case 'author':
       if (!text) break;
+      if (charCount(text) > LIMITS.author) return ctx.reply(v.prompt(tooLongText(LIMITS.author)));
       return next('inventory', { ...data, author: text }, PRODUCT_STEP(5, `🏷 <b>موجودی</b> انبار را بفرستید.\n${hint('فقط عدد؛ مثال: 20')}`));
     case 'inventory': {
       const inventory = parseAmount(text);
       if (inventory === null) return ctx.reply(v.prompt('❌ لطفاً موجودی را فقط به صورت عدد وارد کنید.'));
+      if (fieldProblem('inventory', inventory)) return ctx.reply(v.prompt(fieldProblem('inventory', inventory)!));
       return next('image', { ...data, inventory }, PRODUCT_STEP(6, `🖼 <b>عکس</b> محصول را بفرستید (یا لینک تصویر).\n${hint('برای رد شدن - بفرستید.')}`));
     }
     case 'image': {

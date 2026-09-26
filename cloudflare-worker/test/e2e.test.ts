@@ -10,6 +10,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const ADMIN = 1001;
 const BUYER = 2002;
+const BUYER2 = 3003;
+const FLOODER = 4004;
+const GROUP = -5005;
 const SECRET = 'e2e-secret';
 const TOKEN = 'TEST:TOKEN';
 const PERSIST = '.wrangler/e2e';
@@ -35,13 +38,19 @@ async function post(update: object, secret = SECRET) {
     body: JSON.stringify({ update_id: ++updateId, ...update }),
   });
 }
+const buttons = (call: Call | undefined): { text: string; callback_data: string }[] =>
+  (call?.params.reply_markup?.inline_keyboard ?? []).flat();
+const lastWithButtons = (chatId: number) => sent(chatId).filter((c) => c.params.reply_markup?.inline_keyboard).at(-1);
 const text = (chat: number, t: string) =>
   post({ message: { message_id: ++messageId, from: { id: chat, first_name: `U${chat}` }, chat: { id: chat, type: 'private' }, text: t } });
 const photo = (chat: number, fileId = 'RECEIPT_BIG') =>
   post({
     message: {
       message_id: ++messageId, from: { id: chat, first_name: `U${chat}` }, chat: { id: chat, type: 'private' },
-      photo: [{ file_id: 'small', file_unique_id: 's', width: 1, height: 1 }, { file_id: fileId, file_unique_id: 'b', width: 9, height: 9 }],
+      photo: [
+        { file_id: 'small', file_unique_id: `s-${fileId}`, width: 1, height: 1 },
+        { file_id: fileId, file_unique_id: `u-${fileId}`, width: 9, height: 9 },
+      ],
     },
   });
 const setPrice = async (productId: number, price: string) => {
@@ -50,11 +59,17 @@ const setPrice = async (productId: number, price: string) => {
 };
 const sql = (command: string) =>
   execFileSync('npx', ['wrangler', 'd1', 'execute', 'shop', '--local', '--persist-to', PERSIST, '--command', command], { stdio: 'ignore' });
-const checkoutToPayment = async () => {
-  await press(BUYER, 'checkout');
-  await text(BUYER, 'Ali Mohammadi');
-  await text(BUYER, 'Tehran');
-  await text(BUYER, '09123456789');
+const checkoutToPayment = async (chat = BUYER, phone = '09123456789') => {
+  await press(chat, 'checkout');
+  await text(chat, 'Ali Mohammadi');
+  await text(chat, 'Tehran, Azadi St 12');
+  await text(chat, phone);
+};
+/** Buys `qty` of product 1 as `chat`, paying with a receipt photo `receipt`. */
+const placeOrder = async (chat: number, qty: number, receipt: string) => {
+  await press(chat, `add:1:${qty}`);
+  await checkoutToPayment(chat, '09350000000');
+  await photo(chat, receipt);
 };
 const press = (chat: number, data: string) =>
   post({
@@ -87,6 +102,7 @@ beforeAll(async () => {
     'wrangler', 'dev', '--port', String(WORKER_PORT), '--ip', '127.0.0.1', '--persist-to', PERSIST,
     '--var', `BOT_TOKEN:${TOKEN}`, '--var', `WEBHOOK_SECRET:${SECRET}`,
     '--var', `ADMIN_CHAT_IDS:${ADMIN}`, '--var', `TELEGRAM_API_BASE:http://127.0.0.1:${tgPort}`,
+    '--var', 'FLOOD_LIMIT:100',
   ], { stdio: 'ignore', detached: true });
 
   for (let i = 0; i < 120; i++) {
@@ -235,13 +251,146 @@ describe('shop bot end-to-end', () => {
     await setPrice(1, '100000');
     sql(`UPDATE sessions SET data = json_set(data, '$.lockedAt', 0) WHERE chat_id = ${BUYER}`);
 
-    await photo(BUYER);
+    await photo(BUYER, 'RECEIPT_2');
     const recent = sent(BUYER).slice(-2).map((c) => String(c.params.text));
     expect(recent[0]).toContain('مبلغ سفارش به‌روز شد');
     expect(recent[1]).toContain('200,000 تومان');
 
-    await photo(BUYER);
+    await photo(BUYER, 'RECEIPT_2');
     expect(lastText(BUYER)).toContain('سفارش شما ثبت شد');
     expect(lastText(BUYER)).toContain('200,000');
+  });
+
+  it('shows out-of-stock products without quantity or add-to-cart buttons', async () => {
+    await press(ADMIN, 'a:prod:field:1:inventory');
+    await text(ADMIN, '0');
+    await press(BUYER, 'prod:1');
+    const card = sent(BUYER).filter((c) => c.method === 'sendPhoto').at(-1)!;
+    expect(card.params.caption).toContain('ناموجود');
+    expect(buttons(card).map((b) => b.callback_data)).toEqual(['cat:1']);
+    await press(BUYER, 'cat:1');
+    expect(buttons(lastWithButtons(BUYER)).some((b) => b.text.includes('⛔'))).toBe(true);
+    await press(BUYER, 'add:1:1'); // an old button or a forged callback
+    expect(lastText(BUYER)).toContain('موجودی کافی نیست');
+
+    await press(ADMIN, 'a:prod:field:1:inventory');
+    await text(ADMIN, '10');
+    await press(BUYER, 'qty:1:50');
+    expect(lastText(BUYER)).toContain('تعداد: <b>۱۰</b>'); // quantity is capped at the stock
+  });
+
+  it('hides products of a disabled category, even from old buttons', async () => {
+    await press(ADMIN, 'a:cat:toggle:1');
+    await press(BUYER, 'cat:1');
+    expect(lastText(BUYER)).toContain('دسته‌بندی فعالی وجود ندارد');
+    await press(BUYER, 'prod:1');
+    expect(lastText(BUYER)).toContain('پیدا نشد');
+    await press(BUYER, 'add:1:1');
+    expect(lastText(BUYER)).toContain('پیدا نشد');
+    await press(ADMIN, 'a:cat:toggle:1');
+  });
+
+  it('handles a redelivered update once and ignores group chats', async () => {
+    const update = {
+      update_id: ++updateId,
+      callback_query: {
+        id: 'dup', from: { id: BUYER, first_name: 'U2002' }, data: 'add:1:1',
+        message: { message_id: 50, chat: { id: BUYER, type: 'private' } },
+      },
+    };
+    const send = () =>
+      fetch(`http://127.0.0.1:${WORKER_PORT}/webhook`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': SECRET },
+        body: JSON.stringify(update),
+      });
+    await send();
+    await send(); // Telegram retry of the same update
+    await press(BUYER, 'cart');
+    expect(lastText(BUYER)).toContain('تعداد: ۱');
+    await press(BUYER, 'cart:clear');
+
+    await post({ message: { message_id: ++messageId, from: { id: BUYER, first_name: 'U2002' }, chat: { id: GROUP, type: 'group' }, text: '/start' } });
+    expect(sent(GROUP)).toHaveLength(0);
+  });
+
+  // A truly simultaneous race is covered deterministically in repositories.test.ts.
+  it('takes stock once when approve is pressed twice', async () => {
+    await text(BUYER2, '/start');
+    await press(BUYER2, 'add:1:2');
+    await press(BUYER2, 'checkout');
+    await text(BUYER2, 'Sara Ahmadi');
+    await text(BUYER2, 'آ'.repeat(400));
+    expect(lastText(BUYER2)).toContain('طولانی'); // address length is limited
+    await text(BUYER2, 'Shiraz, Zand St 5');
+    await text(BUYER2, '09350000000');
+    await photo(BUYER2, 'RECEIPT_B2');
+    expect(lastText(BUYER2)).toContain('سفارش شما ثبت شد');
+
+    const alert = sent(ADMIN).filter((c) => c.method === 'sendPhoto').at(-1)!;
+    const approve = buttons(alert).find((b) => b.callback_data.startsWith('a:order:approve:'))!.callback_data;
+    await Promise.all([press(ADMIN, approve), press(ADMIN, approve)]);
+    await press(ADMIN, 'a:prod:1');
+    expect(lastText(ADMIN)).toContain('<b>موجودی:</b> 8'); // 10 - 2, not 10 - 4
+  });
+
+  it('rejects a receipt photo that was already used for another order', async () => {
+    await press(BUYER2, 'add:1:1');
+    await checkoutToPayment(BUYER2, '09350000000');
+    await photo(BUYER2, 'RECEIPT_B2');
+    expect(lastText(BUYER2)).toContain('قبلاً استفاده شده');
+    await photo(BUYER2, 'RECEIPT_B3');
+    expect(lastText(BUYER2)).toContain('سفارش شما ثبت شد');
+  });
+
+  it('limits how many paid orders can wait for review at once', async () => {
+    await placeOrder(BUYER2, 1, 'RECEIPT_B4');
+    await placeOrder(BUYER2, 1, 'RECEIPT_B5');
+    await press(BUYER2, 'add:1:1');
+    await press(BUYER2, 'checkout');
+    expect(lastText(BUYER2)).toContain('در حال بررسی است');
+  });
+
+  it('shows the admin every customer with their orders, and finds them by phone', async () => {
+    await press(ADMIN, 'a:users');
+    const list = buttons(lastWithButtons(ADMIN));
+    expect(list.some((b) => b.text.includes('U2002'))).toBe(true);
+    const sara = list.find((b) => b.text.includes('U3003'))!;
+    expect(sara.text).toContain('🟡'); // has orders waiting for review
+
+    await press(ADMIN, sara.callback_data);
+    const page = lastWithButtons(ADMIN)!;
+    expect(page.params.text).toContain('منتظر تایید: <b>۳</b>');
+    expect(page.params.text).toContain('09350000000');
+    expect(buttons(page).filter((b) => b.callback_data.startsWith('a:order:'))).toHaveLength(4);
+
+    await press(ADMIN, 'a:users:find');
+    await text(ADMIN, '0935000');
+    const found = buttons(lastWithButtons(ADMIN)).filter((b) => b.callback_data.startsWith('a:user:'));
+    expect(found.map((b) => b.callback_data)).toEqual([sara.callback_data]);
+  });
+
+  it('lets the admin block and unblock a customer', async () => {
+    await press(ADMIN, 'a:users');
+    const sara = buttons(lastWithButtons(ADMIN)).find((b) => b.text.includes('U3003'))!;
+    const userId = sara.callback_data.split(':')[2];
+    await press(ADMIN, `a:user:block:${userId}`);
+    await text(BUYER2, '/start');
+    expect(lastText(BUYER2)).toContain('محدود شده');
+    await press(BUYER2, 'shop');
+    expect(calls.at(-1)!.params).toMatchObject({ show_alert: true });
+
+    await press(ADMIN, `a:user:block:${userId}`);
+    await text(BUYER2, '/start');
+    expect(lastText(BUYER2)).not.toContain('محدود شده');
+  });
+
+  it('stops answering a chat that floods the bot', async () => {
+    for (let batch = 0; batch < 13; batch++) {
+      await Promise.all(Array.from({ length: 10 }, () => text(FLOODER, 'hi')));
+    }
+    const answered = sent(FLOODER).length;
+    expect(answered).toBeGreaterThanOrEqual(100);
+    expect(answered).toBeLessThan(130);
   });
 });

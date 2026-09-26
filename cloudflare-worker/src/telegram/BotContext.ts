@@ -1,3 +1,4 @@
+import { MESSAGE_LIMIT, splitHtml } from '../utils/format';
 import { TelegramApiError, type TelegramClient } from './TelegramClient';
 import type { Update, View } from './types';
 
@@ -9,7 +10,10 @@ const PHOTO_CAPTION_LIMIT = 1024;
  */
 export class BotContext {
   readonly chatId: number;
+  /** 'private' for one-to-one chats; the bot ignores groups and channels. */
+  readonly chatType: string;
   readonly firstName: string;
+  readonly username: string;
   readonly text: string | undefined;
   readonly callbackData: string | undefined;
   readonly isAdmin: boolean;
@@ -23,7 +27,9 @@ export class BotContext {
     const msg = update.message ?? cb?.message;
     const from = cb?.from ?? update.message?.from;
     this.chatId = msg?.chat.id ?? from?.id ?? 0;
-    this.firstName = from?.first_name ?? '';
+    this.chatType = msg?.chat.type ?? 'private';
+    this.firstName = [from?.first_name, from?.last_name].filter(Boolean).join(' ');
+    this.username = from?.username ?? '';
     this.text = update.message?.text?.trim();
     this.callbackData = cb?.data;
     this.isAdmin = adminIds.includes(this.chatId);
@@ -37,13 +43,16 @@ export class BotContext {
     return this.update.message?.caption;
   }
 
-  /** file_id of an image sent as photo or as an image document; mirrors extractImageFileIdFromMessage(). */
-  get imageFileId(): string | undefined {
+  /** The image sent as a photo or as an image document; mirrors extractImageFileIdFromMessage(). */
+  get image(): { fileId: string; uniqueId: string } | undefined {
     const msg = this.update.message;
     if (!msg) return undefined;
-    if (msg.photo?.length) return msg.photo[msg.photo.length - 1]!.file_id;
-    if (msg.document?.mime_type?.startsWith('image/')) return msg.document.file_id;
-    return undefined;
+    const file = msg.photo?.length ? msg.photo[msg.photo.length - 1]! : msg.document?.mime_type?.startsWith('image/') ? msg.document : undefined;
+    return file && { fileId: file.file_id, uniqueId: file.file_unique_id };
+  }
+
+  get imageFileId(): string | undefined {
+    return this.image?.fileId;
   }
 
   /** Always sends a new message. */
@@ -65,7 +74,7 @@ export class BotContext {
       await this.reply(view);
     };
     try {
-      if (!view.photo && !pressedIsPhoto) {
+      if (!view.photo && !pressedIsPhoto && view.text.length <= MESSAGE_LIMIT) {
         await this.tg.editMessageText(this.chatId, message.message_id, view.text, view.keyboard);
       } else if (view.photo && pressedIsPhoto && view.text.length <= PHOTO_CAPTION_LIMIT) {
         // Photo → photo (e.g. changing the quantity on a product card): edit in place, no flicker.
@@ -84,14 +93,16 @@ export class BotContext {
 
   /** Sends to any chat (admin notifications, buyer dialog). */
   async sendTo(chatId: number, view: View): Promise<void> {
-    if (!view.photo) {
-      await this.tg.sendMessage(chatId, view.text, view.keyboard);
-    } else if (view.text.length <= PHOTO_CAPTION_LIMIT) {
+    if (view.photo && view.text.length <= PHOTO_CAPTION_LIMIT) {
       await this.tg.sendPhoto(chatId, view.photo, view.text, view.keyboard);
-    } else {
-      // Captions are capped at 1024 chars: send the photo bare, then the text with the buttons.
-      await this.tg.sendPhoto(chatId, view.photo);
-      await this.tg.sendMessage(chatId, view.text, view.keyboard);
+      return;
+    }
+    // Captions are capped at 1024 chars: send the photo bare, then the text with the buttons.
+    if (view.photo) await this.tg.sendPhoto(chatId, view.photo);
+    // Texts over 4096 chars go out in parts; the buttons ride on the last one.
+    const parts = splitHtml(view.text);
+    for (const [i, part] of parts.entries()) {
+      await this.tg.sendMessage(chatId, part, i === parts.length - 1 ? view.keyboard : undefined);
     }
   }
 }
