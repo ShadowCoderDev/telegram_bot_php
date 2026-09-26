@@ -44,6 +44,18 @@ const photo = (chat: number, fileId = 'RECEIPT_BIG') =>
       photo: [{ file_id: 'small', file_unique_id: 's', width: 1, height: 1 }, { file_id: fileId, file_unique_id: 'b', width: 9, height: 9 }],
     },
   });
+const setPrice = async (productId: number, price: string) => {
+  await press(ADMIN, `a:prod:field:${productId}:price`);
+  await text(ADMIN, price);
+};
+const sql = (command: string) =>
+  execFileSync('npx', ['wrangler', 'd1', 'execute', 'shop', '--local', '--persist-to', PERSIST, '--command', command], { stdio: 'ignore' });
+const checkoutToPayment = async () => {
+  await press(BUYER, 'checkout');
+  await text(BUYER, 'Ali Mohammadi');
+  await text(BUYER, 'Tehran');
+  await text(BUYER, '09123456789');
+};
 const press = (chat: number, data: string) =>
   post({
     callback_query: {
@@ -111,7 +123,7 @@ describe('shop bot end-to-end', () => {
     expect(lastText(ADMIN)).toContain('تصویر دریافت نشد');
     // No R2 needed: the uploaded photo is kept as a Telegram file_id.
     await photo(ADMIN, 'PRODUCT_PHOTO');
-    expect(lastText(ADMIN)).toContain('دسته‌بندی این محصول');
+    expect(lastText(ADMIN)).toContain('این محصول را انتخاب کنید');
     await press(ADMIN, 'a:prod:newcat:1');
     expect(lastText(ADMIN)).toContain('IELTS &lt;Book&gt;');
   });
@@ -128,27 +140,31 @@ describe('shop bot end-to-end', () => {
     expect(card.params.photo).toBe('PRODUCT_PHOTO');
 
     await press(BUYER, 'add:1:3');
-    expect(lastText(BUYER)).toContain('موجودی این محصول کافی نیست');
+    expect(lastText(BUYER)).toContain('موجودی کافی نیست');
     await press(BUYER, 'add:1:2');
     expect(lastText(BUYER)).toContain('به سبد خرید اضافه شد');
 
     await press(BUYER, 'cart');
     expect(lastText(BUYER)).toContain('قیمت واحد: 120,000 تومان');
-    expect(lastText(BUYER)).toContain('جمع کل: 240,000 تومان');
+    expect(lastText(BUYER)).toContain('مبلغ قابل پرداخت: 240,000 تومان');
 
     await press(BUYER, 'checkout');
     await text(BUYER, 'Ali');
-    expect(lastText(BUYER)).toContain('صحیح');
+    expect(lastText(BUYER)).toContain('کامل بفرستید');
     await text(BUYER, 'Ali Mohammadi');
     await text(BUYER, 'Tehran, Street 1');
     await text(BUYER, '۰۹۱۲۳۴۵۶۷۸');
-    expect(lastText(BUYER)).toContain('صحیح نیست');
+    expect(lastText(BUYER)).toContain('معتبر نیست');
     await text(BUYER, '۰۹۱۲۳۴۵۶۷۸۹');
     expect(lastText(BUYER)).toContain('240,000');
     await text(BUYER, 'not a photo');
-    expect(lastText(BUYER)).toContain('تصویرِ رسید');
+    expect(lastText(BUYER)).toContain('منتظر عکس رسید');
+
+    // The admin raises the price after the customer was shown the amount: the shown amount holds.
+    await setPrice(1, '150000');
     await photo(BUYER);
     expect(lastText(BUYER)).toContain('IELTS-');
+    expect(lastText(BUYER)).toContain('240,000');
 
     const alert = calls.filter((c) => c.params.chat_id === ADMIN && c.method === 'sendPhoto').at(-1)!;
     expect(alert.params.photo).toBe('RECEIPT_BIG');
@@ -187,7 +203,45 @@ describe('shop bot end-to-end', () => {
   it('admin statistics count the order', async () => {
     await press(ADMIN, 'a:order:approve:1');
     await press(ADMIN, 'a:stats');
-    expect(lastText(ADMIN)).toContain('سفارشات موفق: <b>1</b>');
+    expect(lastText(ADMIN)).toContain('سفارشات موفق: <b>۱</b>');
     expect(lastText(ADMIN)).toContain('240,000');
+  });
+
+  it('keeps paid orders at their snapshot price after the price changes', async () => {
+    await press(BUYER, 'orders');
+    expect(lastText(BUYER)).toContain('قیمت واحد: 120,000 تومان');
+    expect(lastText(BUYER)).not.toContain('150,000');
+  });
+
+  it('cancels checkout when the cart changes after the amount was shown', async () => {
+    await press(ADMIN, 'a:prod:field:1:inventory');
+    await text(ADMIN, '10');
+    await press(BUYER, 'add:1:1');
+    await checkoutToPayment();
+    expect(lastText(BUYER)).toContain('150,000 تومان');
+
+    await press(BUYER, 'add:1:1'); // sneak another item in after seeing the amount
+    expect(lastText(BUYER)).toContain('سبد خرید تغییر کرد');
+    await photo(BUYER);
+    expect(lastText(BUYER)).toContain('متوجه نشدم'); // no receipt accepted without a fresh checkout
+
+    await press(BUYER, 'cart');
+    expect(lastText(BUYER)).toContain('مبلغ قابل پرداخت: 300,000 تومان');
+  });
+
+  it('re-prices an expired lock instead of accepting the old amount', async () => {
+    await checkoutToPayment();
+    expect(lastText(BUYER)).toContain('300,000 تومان');
+    await setPrice(1, '100000');
+    sql(`UPDATE sessions SET data = json_set(data, '$.lockedAt', 0) WHERE chat_id = ${BUYER}`);
+
+    await photo(BUYER);
+    const recent = sent(BUYER).slice(-2).map((c) => String(c.params.text));
+    expect(recent[0]).toContain('مبلغ سفارش به‌روز شد');
+    expect(recent[1]).toContain('200,000 تومان');
+
+    await photo(BUYER);
+    expect(lastText(BUYER)).toContain('سفارش شما ثبت شد');
+    expect(lastText(BUYER)).toContain('200,000');
   });
 });

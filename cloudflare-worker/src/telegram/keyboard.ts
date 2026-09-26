@@ -1,11 +1,12 @@
-import type { InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup } from './types';
+import type { ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup } from './types';
 
 // Pure builders – no I/O, trivially testable.
 
-export const button = (text: string, data: string): InlineKeyboardButton => {
+/** `style` colours the button: primary = blue, success = green, danger = red. */
+export const button = (text: string, data: string, style?: ButtonStyle): InlineKeyboardButton => {
   // Telegram rejects callback_data over 64 bytes; fail loudly in dev instead of silently in prod.
   if (new TextEncoder().encode(data).length > 64) throw new Error(`callback_data too long: ${data}`);
-  return { text, callback_data: data };
+  return style ? { text, callback_data: data, style } : { text, callback_data: data };
 };
 
 export const inline = (...rows: InlineKeyboardButton[][]): InlineKeyboardMarkup => ({ inline_keyboard: rows });

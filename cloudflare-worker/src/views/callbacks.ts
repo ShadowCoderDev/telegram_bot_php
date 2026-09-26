@@ -15,6 +15,7 @@ export const CB = {
   add: (id: number, qty: number) => `add:${id}:${qty}`,
   cart: 'cart',
   clearCart: 'cart:clear',
+  removeItem: (itemId: number) => `cart:del:${itemId}`,
   checkout: 'checkout',
   myOrders: 'orders',
   faqs: 'faqs',

@@ -1,15 +1,21 @@
 import type { Deps } from '../deps';
 import type { Session } from '../db/models';
-import { cartTotal, clampQty, stockProblems } from '../services/CartService';
+import { clampQty, stockProblems } from '../services/CartService';
 import type { BotContext } from '../telegram/BotContext';
 import type { Router } from '../telegram/Router';
 import { escapeHtml } from '../utils/format';
 import { isIranMobile, toEnglishDigits } from '../utils/persian';
 import * as admin from '../views/admin';
 import { CB } from '../views/callbacks';
+import { heading, hint, quote, sections } from '../views/common';
 import * as v from '../views/user';
 
 export const CHECKOUT = 'checkout';
+
+/** How long the amount shown at the payment step stays valid before prices are re-read. */
+export const PRICE_LOCK_MINUTES = 60;
+
+const now = () => Math.floor(Date.now() / 1000);
 
 export function registerUserRoutes(router: Router, d: Deps): Router {
   const showHome = async (ctx: BotContext) => {
@@ -33,15 +39,24 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
     const product = await d.products.find(id);
     await ctx.render(product?.status === 'enable' ? v.productCard(product, clampQty(qty)) : v.productNotFound());
   };
+  const removeItem = async (ctx: BotContext, itemId: number) => {
+    const aborted = await abortCheckout(ctx.chatId, d);
+    const removed = await d.cart.removeItem(await d.user(ctx.chatId, ctx.firstName), itemId);
+    if (!removed) await ctx.reply({ text: '⚠️ این آیتم در سبد خرید شما نیست.' });
+    if (aborted) await ctx.reply(v.checkoutPrompts.cancelledByCartChange());
+    await showCart(ctx);
+  };
 
   return (
     router
       /* ----- text commands & persistent keyboard ----- */
       .text(['/start', v.MENU.home], async (ctx) => {
+        await abortCheckout(ctx.chatId, d);
         await showHome(ctx);
         await ctx.reply(v.persistentKeyboard());
       })
       .text('/cancel', async (ctx) => {
+        await abortCheckout(ctx.chatId, d);
         await d.sessions.clear(ctx.chatId);
         await ctx.reply({ text: '✅ عملیات لغو شد.' });
         await showHome(ctx);
@@ -51,11 +66,7 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
       .text(v.MENU.orders, showOrders)
       .text(v.MENU.support, showSupport)
       .text(v.MENU.faqs, showFaqs)
-      .text(/^\/delete_item_(\d+)$/, async (ctx, [id]) => {
-        const removed = await d.cart.removeItem(await d.user(ctx.chatId, ctx.firstName), Number(id));
-        await ctx.reply({ text: removed ? '🗑️ آیتم از سبد خرید حذف شد.' : '⚠️ آیتم معتبر یافت نشد.' });
-        await showCart(ctx);
-      })
+      .text(/^\/delete_item_(\d+)$/, (ctx, [id]) => removeItem(ctx, Number(id)))
 
       /* ----- inline navigation ----- */
       .callback(CB.noop, async () => {})
@@ -77,21 +88,29 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
       .callback(/^prod:(\d+)$/, (ctx, [id]) => showProduct(ctx, Number(id), 1))
       .callback(/^qty:(\d+):(-?\d+)$/, (ctx, [id, qty]) => showProduct(ctx, Number(id), Number(qty)))
 
-      /* ----- cart ----- */
+      /* ----- cart (every change cancels a checkout in progress, so a shown amount can't go stale) ----- */
       .callback(/^add:(\d+):(\d+)$/, async (ctx, [id, rawQty]) => {
         const qty = clampQty(Number(rawQty));
         const result = await d.cart.add(await d.user(ctx.chatId, ctx.firstName), Number(id), qty);
-        if (result.ok) return ctx.render(v.addedToCart(qty));
-        await ctx.render(result.reason === 'not_found' ? v.productNotFound() : v.notEnoughStock(result.product, result.inCart, qty));
+        if (!result.ok) {
+          return ctx.render(result.reason === 'not_found' ? v.productNotFound() : v.notEnoughStock(result.product, result.inCart, qty));
+        }
+        const aborted = await abortCheckout(ctx.chatId, d);
+        const product = await d.products.find(Number(id));
+        await ctx.render(v.addedToCart(product?.title ?? '', qty));
+        if (aborted) await ctx.reply(v.checkoutPrompts.cancelledByCartChange());
       })
+      .callback(/^cart:del:(\d+)$/, (ctx, [id]) => removeItem(ctx, Number(id)))
       .callback(CB.clearCart, async (ctx) => {
+        await abortCheckout(ctx.chatId, d);
         await d.cart.clear(await d.user(ctx.chatId, ctx.firstName));
-        await d.sessions.clear(ctx.chatId);
-        await ctx.render({ text: '⛔📝 سبد خرید شما با موفقیت خالی شد' });
+        await ctx.render({ text: sections(heading('🗑', 'سبد خرید خالی شد'), hint('هر وقت خواستید دوباره خرید کنید.')) });
         await ctx.reply(v.mainMenu(ctx.firstName));
       })
       .callback(CB.checkout, async (ctx) => {
-        const cart = await d.cart.contents(await d.user(ctx.chatId, ctx.firstName));
+        const user = await d.user(ctx.chatId, ctx.firstName);
+        await abortCheckout(ctx.chatId, d); // restarting checkout never keeps an old lock
+        const cart = await d.cart.contents(user);
         if (!cart) return ctx.render(v.emptyCart());
         const problems = stockProblems(cart.lines);
         if (problems.length) return ctx.render(v.stockProblemsView(problems));
@@ -117,6 +136,45 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
   );
 }
 
+/**
+ * Ends a checkout in progress and releases its price lock, so the cart goes back to live prices.
+ * Returns true when there was one.
+ */
+async function abortCheckout(chatId: number, d: Deps): Promise<boolean> {
+  const s = await d.sessions.get<v.CheckoutData>(chatId);
+  if (s?.flow !== CHECKOUT) return false;
+  await d.orders.unlockPrices(s.data.orderId);
+  await d.sessions.clear(chatId);
+  return true;
+}
+
+/** Locks current prices into the cart and shows the amount to pay (checkout step 4). */
+async function showPayment(ctx: BotContext, d: Deps, data: v.CheckoutData): Promise<void> {
+  // Stock may have run out while the customer was typing their details.
+  const problems = stockProblems(await d.orders.lines(data.orderId));
+  if (problems.length) {
+    await abortCheckout(ctx.chatId, d);
+    return ctx.reply(v.stockProblemsView(problems));
+  }
+  await d.orders.lockPrices(data.orderId);
+  const { total } = await d.orders.lockedTotal(data.orderId);
+  await d.sessions.set(ctx.chatId, CHECKOUT, 'receipt', { ...data, total, lockedAt: now() });
+  const bank = await d.settings.get('bank_info', 'شماره کارت هنوز تنظیم نشده است.');
+  await ctx.reply(v.checkoutPrompts.payment(bank, total, PRICE_LOCK_MINUTES));
+}
+
+/**
+ * A receipt is only accepted for exactly the amount that was shown: the cart must be fully locked,
+ * unchanged and the lock not expired. Anything else re-locks at current prices and asks again.
+ */
+async function lockStillValid(d: Deps, data: v.CheckoutData): Promise<boolean> {
+  const order = await d.orders.find(data.orderId);
+  if (order?.status !== 'pending') return false;
+  const lock = await d.orders.lockedTotal(data.orderId);
+  const fresh = data.lockedAt !== undefined && now() - data.lockedAt <= PRICE_LOCK_MINUTES * 60;
+  return fresh && lock.lines > 0 && lock.unlocked === 0 && lock.total === data.total;
+}
+
 /** One function per checkout step; each validates input, stores it and asks for the next value. */
 async function checkoutStep(ctx: BotContext, s: Session<v.CheckoutData>, d: Deps): Promise<void> {
   const text = ctx.text;
@@ -137,13 +195,21 @@ async function checkoutStep(ctx: BotContext, s: Session<v.CheckoutData>, d: Deps
     case 'phone': {
       const phone = toEnglishDigits(text ?? '').replace(/[\s-]/g, '');
       if (!isIranMobile(phone)) return ctx.reply(v.checkoutPrompts.badPhone());
-      const total = cartTotal(await d.orders.lines(s.data.orderId));
-      await advance('receipt', { ...s.data, phone, total });
-      return ctx.reply(v.checkoutPrompts.payment(await d.settings.get('bank_info', 'شماره کارت هنوز تنظیم نشده است.'), total));
+      return showPayment(ctx, d, { ...s.data, phone });
     }
     case 'receipt': {
       const fileId = ctx.imageFileId;
       if (!fileId) return ctx.reply(v.checkoutPrompts.needImage());
+
+      const order = await d.orders.find(s.data.orderId);
+      if (order?.status !== 'pending') {
+        await d.sessions.clear(ctx.chatId);
+        return ctx.reply(v.emptyCart());
+      }
+      if (!(await lockStillValid(d, s.data))) {
+        await ctx.reply(v.checkoutPrompts.pricesChanged());
+        return showPayment(ctx, d, s.data);
+      }
 
       // Archive to R2; the Telegram file_id alone is enough to show the receipt, so this is best-effort.
       const r2Key = d.files
@@ -164,7 +230,7 @@ async function checkoutStep(ctx: BotContext, s: Session<v.CheckoutData>, d: Deps
       await d.sessions.clear(ctx.chatId);
 
       const full = (await d.orderService.load(s.data.orderId))!;
-      await ctx.reply(v.receiptAccepted(full.order.track_id, { ...s.data, total: cartTotal(full.lines) }));
+      await ctx.reply(v.receiptAccepted(full.order.track_id, s.data, full.lines));
       const alert = admin.orderView(full, '🔔 <b>سفارش جدید ثبت شد!</b>');
       await Promise.all(d.adminIds.map((id) => ctx.sendTo(id, alert).catch((err) => console.error('notify admin', id, err))));
       return;
@@ -173,10 +239,10 @@ async function checkoutStep(ctx: BotContext, s: Session<v.CheckoutData>, d: Deps
 }
 
 async function forwardBuyerReply(ctx: BotContext, d: Deps, adminChatId: number, orderId: number): Promise<void> {
-  const header = `📥 <b>پاسخ خریدار</b> (Order #${orderId}):\n\n`;
+  const header = `📥 <b>پاسخ خریدار</b> ${hint(`(سفارش #${orderId})`)}\n\n`;
   const photo = ctx.update.message?.photo?.at(-1)?.file_id;
-  if (photo) await ctx.sendTo(adminChatId, { photo, text: header + escapeHtml(ctx.caption) });
-  else if (ctx.text) await ctx.sendTo(adminChatId, { text: header + escapeHtml(ctx.text) });
+  if (photo) await ctx.sendTo(adminChatId, { photo, text: header + quote(escapeHtml(ctx.caption) || '📷') });
+  else if (ctx.text) await ctx.sendTo(adminChatId, { text: header + quote(escapeHtml(ctx.text)) });
   else return ctx.reply({ text: '⚠️ فقط متن یا عکس قابل ارسال است.' });
   await ctx.reply({ text: '✅ پیام شما برای پشتیبانی ارسال شد.' });
 }

@@ -5,10 +5,12 @@ import type { AdminOrderAction } from '../services/orderStatus';
 import type { BotContext } from '../telegram/BotContext';
 import { backRow, button } from '../telegram/keyboard';
 import type { Router } from '../telegram/Router';
+import type { View } from '../telegram/types';
 import { escapeHtml as e, money } from '../utils/format';
 import { parseAmount, tehranDayAndMonthStart } from '../utils/persian';
 import * as v from '../views/admin';
 import { CB } from '../views/callbacks';
+import { heading, hint, progress, quote, sections } from '../views/common';
 
 const A = CB.admin;
 
@@ -25,6 +27,11 @@ const ADMIN_FLOWS: readonly string[] = Object.values(FLOW);
 
 type Data = Record<string, unknown>;
 
+const PRODUCT_STEPS = 7;
+const PRODUCT_STEP = (n: number, body: string) => v.formStep('افزودن محصول', n, PRODUCT_STEPS, body);
+const CATEGORY_STEP = (n: number, body: string) => v.formStep('افزودن دسته‌بندی', n, 2, body);
+const FAQ_STEP = (n: number, body: string) => v.formStep('افزودن سوال متداول', n, 2, body);
+
 /**
  * Registered before the user router and only for admins. Anything it doesn't match falls through
  * to the user routes, so an admin can also browse the shop like a customer.
@@ -40,9 +47,9 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
     const full = await d.orderService.load(id);
     await ctx.render(full ? v.orderView(full) : v.done('❌ سفارش یافت نشد.'));
   };
-  const start = async (ctx: BotContext, flow: string, step: string, data: Data, message: string) => {
+  const start = async (ctx: BotContext, flow: string, step: string, data: Data, message: string | View) => {
     await d.sessions.set(ctx.chatId, flow, step, data);
-    await ctx.reply(v.prompt(message));
+    await ctx.reply(typeof message === 'string' ? v.prompt(message) : message);
   };
 
   return (
@@ -81,7 +88,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
 
       /* ----- FAQs ----- */
       .callback(A.faqs, async (ctx) => ctx.render(v.faqsManage(await d.faqs.list(false))))
-      .callback(A.addFaq, (ctx) => start(ctx, FLOW.faq, 'question', {}, '<b>مرحله ۱: افزودن سوال</b>\n\nلطفاً «سوال» را به صورت کامل وارد کنید:'))
+      .callback(A.addFaq, (ctx) => start(ctx, FLOW.faq, 'question', {}, FAQ_STEP(1, '❓ متن کامل <b>سوال</b> را بفرستید:')))
       .callback(/^a:faq:toggle:(\d+)$/, async (ctx, [id]) => {
         const faq = await d.faqs.find(Number(id));
         if (faq) await d.faqs.setStatus(faq.id, flip(faq.status));
@@ -90,7 +97,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
 
       /* ----- categories ----- */
       .callback(A.categories, async (ctx) => ctx.render(v.categoriesManage(await d.categories.list(false))))
-      .callback(A.addCategory, (ctx) => start(ctx, FLOW.category, 'name', {}, '<b>مرحله ۱: افزودن دسته‌بندی</b>\n\nنام دسته‌بندی را وارد کنید:'))
+      .callback(A.addCategory, (ctx) => start(ctx, FLOW.category, 'name', {}, CATEGORY_STEP(1, '📂 <b>نام</b> دسته‌بندی را بفرستید:')))
       .callback(/^a:cat:toggle:(\d+)$/, async (ctx, [id]) => {
         const cat = await d.categories.find(Number(id));
         if (cat) await d.categories.setStatus(cat.id, flip(cat.status));
@@ -106,13 +113,13 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
         const catId = Number(id);
         if (await d.categories.hasProducts(catId)) return ctx.render(v.done('🚫 این دسته‌بندی شامل محصول است و قابل حذف نیست.'));
         await d.categories.delete(catId);
-        await ctx.reply({ text: '✅ دسته‌بندی با موفقیت حذف شد.' });
+        await ctx.reply({ text: '✅ دسته‌بندی حذف شد.' });
         await ctx.render(v.categoryDeleteList(await d.categories.list(false)));
       })
 
       /* ----- products ----- */
       .callback(A.products, async (ctx) => ctx.render(v.productsList(await d.products.listAll())))
-      .callback(A.addProduct, (ctx) => start(ctx, FLOW.product, 'title', {}, '<b>مرحله ۱: افزودن محصول</b>\n\nنام محصول را وارد کنید:'))
+      .callback(A.addProduct, (ctx) => start(ctx, FLOW.product, 'title', {}, PRODUCT_STEP(1, '📘 <b>نام</b> محصول را بفرستید:')))
       .callback(/^a:prod:(\d+)$/, (ctx, [id]) => showProduct(ctx, Number(id)))
       .callback(/^a:prod:edit:(\d+)$/, (ctx, [id]) => ctx.render(v.productEditMenu(Number(id))))
       .callback(/^a:prod:field:(\d+):(\w+)$/, async (ctx, [id, field]) => {
@@ -140,7 +147,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
         const draft = { ...s.data, category_id: Number(catId) } as ProductDraft;
         const id = await d.products.create(draft);
         await d.sessions.clear(ctx.chatId);
-        await ctx.render(v.done(`✅ محصول '<b>${e(draft.title)}</b>' با شناسه #${id} اضافه شد.`));
+        await ctx.render(v.done(sections(heading('✅', 'محصول اضافه شد'), quote(`📘 <b>${e(draft.title)}</b>  ${hint(`#${id}`)}`))));
       })
 
       /* ----- orders ----- */
@@ -220,8 +227,8 @@ const BAD_IMAGE = '❌ تصویر دریافت نشد.\nیک <b>عکس</b> بف�
 
 async function adminFlowStep(ctx: BotContext, s: Session<Data>, d: Deps): Promise<void> {
   const text = ctx.text ?? '';
-  const next = (step: string, data: Data, message: string) =>
-    d.sessions.set(ctx.chatId, s.flow, step, data).then(() => ctx.reply(v.prompt(message)));
+  const next = (step: string, data: Data, message: string | View) =>
+    d.sessions.set(ctx.chatId, s.flow, step, data).then(() => ctx.reply(typeof message === 'string' ? v.prompt(message) : message));
   const finish = (message: string) => d.sessions.clear(ctx.chatId).then(() => ctx.reply(v.done(message)));
   const needText = () => ctx.reply(v.prompt('⚠️ لطفاً یک متن ارسال کنید.'));
 
@@ -236,16 +243,16 @@ async function adminFlowStep(ctx: BotContext, s: Session<Data>, d: Deps): Promis
 
     case FLOW.faq: {
       if (!text) return needText();
-      if (s.step === 'question') return next('answer', { question: text }, '<b>مرحله ۲:</b>\n\nحالا «پاسخ» این سوال را وارد کنید:');
+      if (s.step === 'question') return next('answer', { question: text }, FAQ_STEP(2, '✅ حالا <b>پاسخ</b> این سوال را بفرستید:'));
       await d.faqs.create(String(s.data.question), text);
-      return finish('✅ سوال جدید با موفقیت اضافه شد.');
+      return finish(sections(heading('✅', 'سوال جدید اضافه شد'), quote(e(String(s.data.question)))));
     }
 
     case FLOW.category: {
       if (!text) return needText();
-      if (s.step === 'name') return next('icon', { name: text }, '<b>مرحله ۲:</b>\n\nیک آیکون (ایموجی) برای دسته‌بندی بفرستید (مثال: ✨)');
+      if (s.step === 'name') return next('icon', { name: text }, CATEGORY_STEP(2, `🎨 یک <b>ایموجی</b> برای دسته‌بندی بفرستید.\n${hint('مثال: 📚  🎧  ✨')}`));
       await d.categories.create(String(s.data.name), text);
-      return finish(`✅ دسته‌بندی '<b>${e(String(s.data.name))}</b>' اضافه شد.`);
+      return finish(sections(heading('✅', 'دسته‌بندی اضافه شد'), quote(`${e(text)} <b>${e(String(s.data.name))}</b>`)));
     }
 
     case FLOW.product:
@@ -264,7 +271,7 @@ async function adminFlowStep(ctx: BotContext, s: Session<Data>, d: Deps): Promis
         await d.products.update(productId, field, value);
       }
       await d.sessions.clear(ctx.chatId);
-      await ctx.reply({ text: `✅ مقدار <b>${field}</b> محصول #${productId} بروزرسانی شد.` });
+      await ctx.reply({ text: `✅ ${v.PRODUCT_FIELD_LABELS[field].button} به‌روزرسانی شد.` });
       const p = (await d.products.find(productId))!;
       return ctx.reply(v.productInfo(p, p.category_id ? await d.categories.find(p.category_id) : null));
     }
@@ -281,7 +288,7 @@ async function adminFlowStep(ctx: BotContext, s: Session<Data>, d: Deps): Promis
   }
 }
 
-type Next = (step: string, data: Data, message: string) => Promise<void>;
+type Next = (step: string, data: Data, message: string | View) => Promise<void>;
 
 /** title → description → price → author → inventory → image → (category button) */
 async function addProductStep(ctx: BotContext, s: Session<Data>, d: Deps, text: string, next: Next): Promise<void> {
@@ -289,22 +296,22 @@ async function addProductStep(ctx: BotContext, s: Session<Data>, d: Deps, text: 
   switch (s.step) {
     case 'title':
       if (!text) break;
-      return next('description', { ...data, title: text }, '<b>مرحله ۲:</b>\n\nتوضیحات محصول را وارد کنید:');
+      return next('description', { ...data, title: text }, PRODUCT_STEP(2, '💬 <b>توضیحات</b> محصول را بفرستید:'));
     case 'description':
       if (!text) break;
-      return next('price', { ...data, description: text }, '<b>مرحله ۳:</b>\n\nقیمت محصول را به تومان (فقط عدد) وارد کنید:');
+      return next('price', { ...data, description: text }, PRODUCT_STEP(3, `💰 <b>قیمت</b> را به تومان بفرستید.\n${hint('فقط عدد؛ مثال: 780000')}`));
     case 'price': {
       const price = parseAmount(text);
       if (price === null) return ctx.reply(v.prompt('❌ لطفاً قیمت را فقط به صورت عدد وارد کنید.'));
-      return next('author', { ...data, price }, `<b>مرحله ۴:</b>\n\n(${money(price)} تومان ثبت شد)\nنام نویسنده/مدرس را وارد کنید:`);
+      return next('author', { ...data, price }, PRODUCT_STEP(4, `${hint(`✔️ قیمت: ${money(price)} تومان`)}\n\n✍️ نام <b>نویسنده/مدرس</b> را بفرستید:`));
     }
     case 'author':
       if (!text) break;
-      return next('inventory', { ...data, author: text }, '<b>مرحله ۵:</b>\n\nتعداد موجودی محصول را وارد کنید (فقط عدد):');
+      return next('inventory', { ...data, author: text }, PRODUCT_STEP(5, `🏷 <b>موجودی</b> انبار را بفرستید.\n${hint('فقط عدد؛ مثال: 20')}`));
     case 'inventory': {
       const inventory = parseAmount(text);
       if (inventory === null) return ctx.reply(v.prompt('❌ لطفاً موجودی را فقط به صورت عدد وارد کنید.'));
-      return next('image', { ...data, inventory }, '<b>مرحله ۶:</b>\n\n🖼 عکس محصول را بفرستید (یا لینک تصویر).\nبرای رد شدن <code>-</code> بفرستید.');
+      return next('image', { ...data, inventory }, PRODUCT_STEP(6, `🖼 <b>عکس</b> محصول را بفرستید (یا لینک تصویر).\n${hint('برای رد شدن - بفرستید.')}`));
     }
     case 'image': {
       const image = text === '-' ? { image_url: '', image_file_id: '' } : readImage(ctx);
@@ -312,11 +319,11 @@ async function addProductStep(ctx: BotContext, s: Session<Data>, d: Deps, text: 
       const cats = await d.categories.list(true);
       if (!cats.length) {
         await d.sessions.clear(ctx.chatId);
-        return ctx.reply(v.done('❌ هیچ دسته‌بندی فعالی وجود ندارد. ابتدا یک دسته‌بندی ایجاد کنید.'));
+        return ctx.reply(v.done(sections(heading('⚠️', 'دسته‌بندی فعالی وجود ندارد'), hint('اول یک دسته‌بندی بسازید، بعد محصول اضافه کنید.'))));
       }
       await d.sessions.set(ctx.chatId, s.flow, 'category', { ...data, ...image });
       return ctx.reply(
-        v.categoryPicker(cats, '<b>مرحله نهایی (۷):</b>\n\nدسته‌بندی این محصول را انتخاب کنید:', (c) => A.newProductCategory(c.id), [
+        v.categoryPicker(cats, sections(`${heading('📝', 'افزودن محصول')}\n${progress(7, PRODUCT_STEPS)}`, '📂 <b>دسته‌بندی</b> این محصول را انتخاب کنید:'), (c) => A.newProductCategory(c.id), [
           button('لغو عملیات ❌', A.cancel),
         ]),
       );
