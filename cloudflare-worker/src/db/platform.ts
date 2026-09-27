@@ -1,4 +1,4 @@
-import { DAY, GRACE_DAYS, extendedUntil } from '../services/subscription';
+import { DAY, GRACE_DAYS, PURGE_WARNING_DAYS, extendedUntil } from '../services/subscription';
 
 /*
  * Platform-level tables (not owned by any one shop): the shops themselves and their subscription
@@ -21,6 +21,8 @@ export interface ShopRow {
   reminder_stage: number;
   /** Daily cap on the updates the shop's bot handles; null = its plan's default. */
   daily_limit: number | null;
+  /** When the data of a lapsed shop was deleted (null = never). */
+  purged_at: number | null;
   created_at: number;
 }
 
@@ -72,7 +74,7 @@ export class ShopRepository extends GlobalRepository {
   /** Re-activates a deleted shop of the same bot (the seller came back). */
   revive(id: number, s: { ownerChatId: number; botUsername: string; tokenEnc: string; webhookSecret: string }) {
     return this.run(
-      "UPDATE shops SET owner_chat_id = ?, bot_username = ?, bot_token_enc = ?, webhook_secret = ?, status = 'active' WHERE id = ?",
+      "UPDATE shops SET owner_chat_id = ?, bot_username = ?, bot_token_enc = ?, webhook_secret = ?, status = 'active', purged_at = NULL WHERE id = ?",
       s.ownerChatId, s.botUsername, s.tokenEnc, s.webhookSecret, id,
     );
   }
@@ -117,16 +119,51 @@ export class ShopRepository extends GlobalRepository {
       now,
     ))!;
   }
-  /** Shops that may need an expiry reminder (the exact stage is decided in code). */
-  reminderCandidates(now: number, limit: number) {
+  /** Shops with an expiry reminder due (the exact stage is decided in code, see dueReminder). */
+  reminderCandidates(now: number, retentionDays: number, limit: number) {
+    const closed = now - GRACE_DAYS * DAY;
+    const lastWarning = now - (GRACE_DAYS + retentionDays - PURGE_WARNING_DAYS) * DAY;
     return this.all<ShopRow>(
-      `SELECT * FROM shops WHERE plan != 'owner' AND status = 'active' AND reminder_stage < 3
-         AND paid_until < ? ORDER BY paid_until LIMIT ?`,
-      now + 3 * 86_400,
+      `SELECT * FROM shops WHERE plan != 'owner' AND status = 'active' AND (
+           (reminder_stage < 1 AND paid_until < ?1) OR (reminder_stage < 2 AND paid_until < ?2)
+        OR (reminder_stage < 3 AND paid_until < ?3) OR (reminder_stage < 4 AND paid_until < ?4))
+       ORDER BY paid_until LIMIT ?5`,
+      now + 3 * DAY, now, closed, lastWarning, limit,
+    );
+  }
+
+  /** Lapsed shops whose retention period is over: their data is due for deletion. */
+  purgeCandidates(now: number, retentionDays: number, limit: number) {
+    return this.all<ShopRow>(
+      `SELECT * FROM shops WHERE plan != 'owner' AND status = 'active' AND purged_at IS NULL AND paid_until < ?
+        ORDER BY paid_until LIMIT ?`,
+      now - (GRACE_DAYS + retentionDays) * DAY,
       limit,
     );
   }
+
+  /**
+   * Deletes everything a shop's customers and admins created (payments to the platform stay, for
+   * the accounts) and marks the shop deleted – in one transaction, and only if it still hasn't
+   * been renewed at that moment.
+   */
+  async purge(id: number, now: number, paidUntil: number): Promise<boolean> {
+    const still = `(SELECT 1 FROM shops WHERE id = ?1 AND paid_until = ?2 AND status = 'active' AND purged_at IS NULL)`;
+    const del = (table: string) => this.db.prepare(`DELETE FROM ${table} WHERE shop_id = ?1 AND EXISTS ${still}`).bind(id, paidUntil);
+    const results = await this.db.batch([
+      ...PURGED_TABLES.map(del),
+      this.db
+        .prepare(`UPDATE shops SET status = 'deleted', purged_at = ?3, bot_token_enc = '' WHERE id = ?1 AND EXISTS ${still}`)
+        .bind(id, paidUntil, now),
+    ]);
+    return results.at(-1)!.meta.changes > 0;
+  }
 }
+
+/** Every table with a shop's own rows, children before parents. */
+const PURGED_TABLES = [
+  'order_items', 'order_details', 'dialogs', 'sessions', 'orders', 'products', 'categories', 'faqs', 'users', 'settings', 'bot_usage', 'processed_updates',
+];
 
 export class SubscriptionPaymentRepository extends GlobalRepository {
   async create(p: { shopId: number; payerChatId: number; months: number; amount: number; fileId: string; uniqueId: string }) {

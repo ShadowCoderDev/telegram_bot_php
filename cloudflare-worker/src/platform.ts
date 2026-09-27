@@ -57,6 +57,11 @@ export type PlatformDeps = ReturnType<typeof createPlatformDeps>;
 async function price(d: PlatformDeps): Promise<number> {
   return Number(await d.settings.get('monthly_price')) || Number(PLATFORM_SETTING_DEFAULTS.monthly_price);
 }
+/** Days a lapsed shop's data is kept after it closes (platform setting, 7–365). */
+export async function retentionDays(d: PlatformDeps): Promise<number> {
+  const n = Number(await d.settings.get('retention_days'));
+  return Number.isFinite(n) && n >= 7 ? Math.min(365, n) : Number(PLATFORM_SETTING_DEFAULTS.retention_days);
+}
 async function trialDays(d: PlatformDeps): Promise<number> {
   return Math.max(0, Math.min(30, Number(await d.settings.get('trial_days')) || 0));
 }
@@ -182,7 +187,7 @@ function registerSellerRoutes(router: Router, d: PlatformDeps): Router {
     const shop = await ownedShop(d, ctx, id);
     if (!shop) return shops(ctx);
     const pending = (await d.payments.pendingCountForShop(shop.id)) > 0;
-    await ctx.render(pv.shopPage(shop, now(), await shopClaimCode(d.masterKey, shop.id), pending, await shopUsage(d, shop)));
+    await ctx.render(pv.shopPage(shop, now(), await shopClaimCode(d.masterKey, shop.id), pending, await shopUsage(d, shop), await retentionDays(d)));
   };
   const renew = async (ctx: BotContext, id: number) => {
     const shop = await ownedShop(d, ctx, id);
@@ -213,7 +218,7 @@ function registerSellerRoutes(router: Router, d: PlatformDeps): Router {
     .callback(PCB.shops, shops)
     .callback(PCB.limits, async (ctx) => {
       const c = await capacitySettings(d.settings);
-      await ctx.render(pv.limitsView(await price(d), await trialDays(d), { trial: c.trialCap, paid: c.paidCap }));
+      await ctx.render(pv.limitsView(await price(d), await trialDays(d), { trial: c.trialCap, paid: c.paidCap }, await retentionDays(d)));
     })
     .callback(PCB.support, async (ctx) => ctx.render(pv.supportView(await d.settings.get('support'))))
     .callback(PCB.newShop, async (ctx) => {
@@ -339,7 +344,7 @@ function registerAdminRoutes(router: Router, d: PlatformDeps): Router {
   };
   const shopPage = async (ctx: BotContext, id: number) => {
     const shop = await d.shops.find(id);
-    await (shop ? ctx.render(pv.adminShopPage(shop, now(), await d.payments.forShop(id), await shopUsage(d, shop))) : shopsPage(ctx, 0));
+    await (shop ? ctx.render(pv.adminShopPage(shop, now(), await d.payments.forShop(id), await shopUsage(d, shop), await retentionDays(d))) : shopsPage(ctx, 0));
   };
   const capacity = async (ctx: BotContext) => ctx.render(pv.capacityView(await capacityReport(d.env.DB, await capacitySettings(d.settings), now())));
   const capacitySettingsPage = async (ctx: BotContext) => ctx.render(pv.capacitySettingsView(await d.settings.getMany(CAPACITY_KEYS)));
@@ -434,6 +439,10 @@ function registerAdminRoutes(router: Router, d: PlatformDeps): Router {
         const n = parseAmount(text);
         if (n === null || n > 30) return ctx.reply({ text: sections('⚠️ عددی بین ۰ تا ۳۰ بفرستید.', CANCEL_HINT) });
         value = String(n);
+      } else if (s.data.key === 'retention_days') {
+        const n = parseAmount(text);
+        if (n === null || n < 7 || n > 365) return ctx.reply({ text: sections('⚠️ عددی بین ۷ تا ۳۶۵ بفرستید.', CANCEL_HINT) });
+        value = String(n);
       } else if (isCapacityKey(s.data.key)) {
         const n = parseAmount(text);
         const [min, max] = CAPACITY_RANGES[s.data.key];
@@ -461,22 +470,47 @@ const isCapacityKey = (key: string): key is CapacityKey => (CAPACITY_KEYS as rea
 /* ------------------------------------------------------------------ */
 
 /**
- * Sends each due expiry reminder once (3 days before, at expiry, when closed). Runs hourly;
- * a batch is capped well under the free plan's 50 outgoing requests per invocation.
+ * Sends each due expiry reminder once (3 days before, at expiry, when closed, a week before the
+ * data is deleted). Runs hourly; a batch is capped well under the free plan's 50 outgoing
+ * requests per invocation.
  */
-export async function sendReminders(d: PlatformDeps, batch = 40): Promise<number> {
+export async function sendReminders(d: PlatformDeps, batch = 30): Promise<number> {
   if (!d.env.PLATFORM_BOT_TOKEN) return 0;
   const t = now();
+  const retention = await retentionDays(d);
   let sent = 0;
-  for (const shop of await d.shops.reminderCandidates(t, batch)) {
-    const stage = dueReminder(shop, t);
+  for (const shop of await d.shops.reminderCandidates(t, retention, batch)) {
+    const stage = dueReminder(shop, t, retention);
     if (!stage) continue;
-    const view = pv.reminder(shop, stage);
+    const view = pv.reminder(shop, stage, retention);
     await d.tg.sendMessage(shop.owner_chat_id, view.text, view.keyboard).catch((err) => console.error('reminder', shop.id, err));
     await d.shops.setReminderStage(shop.id, stage);
     sent++;
   }
   return sent;
+}
+
+/**
+ * Deletes the data of shops that stayed unpaid for the whole retention period, disconnects their
+ * bots and tells the sellers. A few shops per run: each one is a handful of deletes.
+ */
+export async function purgeLapsedShops(d: PlatformDeps, batch = 3): Promise<number> {
+  const t = now();
+  let purged = 0;
+  for (const shop of await d.shops.purgeCandidates(t, await retentionDays(d), batch)) {
+    // Disconnect the bot first (needs its token, which the purge erases).
+    if (d.masterKey && shop.bot_token_enc) {
+      const token = await decryptToken(shop.bot_token_enc, d.masterKey).catch(() => null);
+      if (token) await d.botClient(token).call('deleteWebhook').catch(() => {});
+    }
+    if (!(await d.shops.purge(shop.id, t, shop.paid_until))) continue; // renewed meanwhile
+    purged++;
+    if (d.env.PLATFORM_BOT_TOKEN) {
+      const view = pv.purgedNotice(shop);
+      await d.tg.sendMessage(shop.owner_chat_id, view.text, view.keyboard).catch((err) => console.error('purge notice', shop.id, err));
+    }
+  }
+  return purged;
 }
 
 /* ------------------------------------------------------------------ */

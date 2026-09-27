@@ -14,6 +14,7 @@ import { capAlert, dailyCap, parseCapacitySettings } from '../src/capacity';
 import { PLATFORM_SETTING_DEFAULTS } from '../src/db/repositories';
 import { UNCAPPED, utcDay } from '../src/db/usage';
 import { flooding, onceEvery } from '../src/flood';
+import { dueReminder, purgeAt } from '../src/services/subscription';
 
 describe('persian utils', () => {
   it('normalises Persian and Arabic digits', () => {
@@ -226,5 +227,25 @@ describe('flood guard (in memory)', () => {
     expect(onceEvery('k', 60, 0)).toBe(true);
     expect(onceEvery('k', 60, 59_000)).toBe(false);
     expect(onceEvery('k', 60, 61_000)).toBe(true);
+  });
+});
+
+describe('subscription reminders and data retention', () => {
+  const D = 86_400;
+  const shop = (paidUntil: number, stage = 0) => ({ plan: 'paid' as const, status: 'active' as const, paid_until: paidUntil, reminder_stage: stage });
+
+  it('deletes data retention days after the shop closed (expiry + grace)', () => {
+    expect(purgeAt(1000, 30)).toBe(1000 + 33 * D);
+  });
+
+  it('warns 3 days before, at expiry, when closed, and a week before deletion – each once', () => {
+    const t = 10_000 * D;
+    expect(dueReminder(shop(t + 2 * D), t, 30)).toBe(1);
+    expect(dueReminder(shop(t - D, 1), t, 30)).toBe(2);
+    expect(dueReminder(shop(t - 4 * D, 2), t, 30)).toBe(3);
+    expect(dueReminder(shop(t - 20 * D, 3), t, 30)).toBe(0);
+    expect(dueReminder(shop(t - 27 * D, 3), t, 30)).toBe(4);
+    expect(dueReminder(shop(t - 27 * D, 4), t, 30)).toBe(0);
+    expect(dueReminder({ ...shop(t - 27 * D), status: 'suspended' as const }, t, 30)).toBe(0);
   });
 });

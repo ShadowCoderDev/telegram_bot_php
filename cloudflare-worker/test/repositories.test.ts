@@ -7,6 +7,7 @@ import { rmSync } from 'node:fs';
 import { getPlatformProxy } from 'wrangler';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { emptyUsage, meterD1 } from '../src/db/meter';
+import { ShopRepository } from '../src/db/platform';
 import { CategoryRepository, FaqRepository, OrderRepository, ProductRepository, SessionRepository, SettingsRepository, UserRepository } from '../src/db/repositories';
 import { PlatformUsageRepository, UNCAPPED, UsageRepository, addPendingUsage, utcDay } from '../src/db/usage';
 
@@ -186,6 +187,22 @@ describe('usage tracking (redeliveries, daily cap)', () => {
     expect(await bot.today(T)).toMatchObject({ updates: 2, rows_written: 7, rows_read: 42 });
     const totals = await new PlatformUsageRepository(db).totals(utcDay(T));
     expect(totals.rows_written).toBeGreaterThanOrEqual(7);
+  });
+});
+
+describe('deleting a lapsed shop', () => {
+  it('deletes only that shop\'s rows, and nothing if it was renewed meanwhile', async () => {
+    const T = 1_900_000_000;
+    await exec(`INSERT INTO shops (id, owner_chat_id, plan, paid_until) VALUES (50, 5, 'trial', 1000)`);
+    await exec(`INSERT INTO categories (shop_id, name) VALUES (50, 'x'), (1, 'kept')`);
+    const shops = new ShopRepository(db);
+    expect(await shops.purge(50, T, 999)).toBe(false); // paid_until changed since it was chosen: renewed
+    expect(await db.prepare('SELECT count(*) AS n FROM categories WHERE shop_id = 50').first()).toEqual({ n: 1 });
+    expect(await shops.purge(50, T, 1000)).toBe(true);
+    expect(await db.prepare('SELECT count(*) AS n FROM categories WHERE shop_id = 50').first()).toEqual({ n: 0 });
+    expect(await db.prepare("SELECT count(*) AS n FROM categories WHERE shop_id = 1 AND name = 'kept'").first()).toEqual({ n: 1 });
+    expect(await db.prepare('SELECT status, purged_at FROM shops WHERE id = 50').first()).toEqual({ status: 'deleted', purged_at: T });
+    expect(await shops.purge(50, T, 1000)).toBe(false); // once
   });
 });
 

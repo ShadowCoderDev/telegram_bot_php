@@ -3,7 +3,7 @@ import type { ShopRow, SubscriptionPayment } from '../db/platform';
 import type { PlatformSettingKey } from '../db/repositories';
 import { UNCAPPED, type DayUsage } from '../db/usage';
 import { PLAN_LIMITS } from '../limits';
-import { RENEW_OPTIONS, daysLeft, shopAccess, type Access } from '../services/subscription';
+import { GRACE_DAYS, RENEW_OPTIONS, daysLeft, purgeAt, shopAccess, type Access, type ReminderStage } from '../services/subscription';
 import { backRow, button, inline, urlButton } from '../telegram/keyboard';
 import type { View } from '../telegram/types';
 import { escapeHtml as e } from '../utils/format';
@@ -52,7 +52,7 @@ const botLink = (s: ShopRow) => (s.bot_username ? `@${e(s.bot_username)}` : `#${
 const ACCESS_LABEL: Record<Access, string> = {
   ok: '🟢 فعال',
   grace: '🟠 منقضی (مهلت تمدید)',
-  expired: '🔴 منقضی (بسته برای مشتری)',
+  expired: '🔴 منقضی (فروشگاه بسته)',
   suspended: '⛔ متوقف‌شده',
 };
 
@@ -63,6 +63,12 @@ const statusLine = (s: ShopRow, now: number): string => {
   if (access === 'ok') return `${s.plan === 'trial' ? '🎁 آزمایشی' : '🟢 فعال'} · <b>${fa(left)}</b> روز مانده ${hint(`(تا ${date(s.paid_until)})`)}`;
   return ACCESS_LABEL[access];
 };
+
+/** For a closed shop: until when its data is kept. */
+const keptUntilLine = (s: ShopRow, now: number, retentionDays: number): string =>
+  s.plan !== 'owner' && shopAccess(s, now) === 'expired'
+    ? `🗄 داده‌ها تا <b>${date(purgeAt(s.paid_until, retentionDays))}</b> نگه داشته می‌شود، بعد پاک می‌شود مگر تمدید شود.`
+    : '';
 
 /** Today's usage of a shop's bot against its daily cap. */
 export interface ShopUsage {
@@ -133,10 +139,11 @@ export const myShops = (shops: ShopRow[], now: number): View =>
         keyboard: inline([button('➕ ساخت فروشگاه', PCB.newShop, 'success')], toHome()),
       };
 
-export const shopPage = (s: ShopRow, now: number, claimCode: string, pendingPayment: boolean, usage: ShopUsage): View => ({
+export const shopPage = (s: ShopRow, now: number, claimCode: string, pendingPayment: boolean, usage: ShopUsage, retentionDays: number): View => ({
   text: sections(
     `🤖 <b>${botLink(s)}</b>`,
     quote(`📌 ${statusLine(s, now)}\n${usageLine(usage)}\n🗓 ساخته‌شده: ${date(s.created_at)}`),
+    keptUntilLine(s, now, retentionDays),
     pendingPayment ? '⏳ یک پرداخت شما در حال بررسی است.' : '',
     `👮 برای اضافه کردن ادمین دیگر، او باید در ربات فروشگاه این را بفرستد:\n<code>/claim ${claimCode}</code>\n${hint('این کد را فقط به افراد مورد اعتماد بدهید.')}`,
   ),
@@ -171,7 +178,7 @@ export const paymentReceived = (): View => ({
   keyboard: inline(toHome()),
 });
 
-export const limitsView = (price: number, trialDays: number, caps: { trial: number; paid: number }): View => ({
+export const limitsView = (price: number, trialDays: number, caps: { trial: number; paid: number }, retentionDays: number): View => ({
   text: sections(
     heading('📋', 'امکانات و محدودیت‌ها'),
     `💰 <b>قیمت:</b> ${toman(price)} در ماه · 🎁 ${fa(trialDays)} روز رایگان`,
@@ -185,7 +192,10 @@ export const limitsView = (price: number, trialDays: number, caps: { trial: numb
           '👥 تعداد مشتری و سفارش: <b>نامحدود</b>\n' +
           '🖼 عکس محصول و رسید: <b>نامحدود</b> (عکس‌ها روی سرورهای تلگرام نگه‌داری می‌شوند)',
       ),
-    hint('اگر اشتراک تمام شود، فروشگاه ۳ روز دیگر باز می‌ماند؛ بعد برای مشتری‌ها بسته می‌شود ولی هیچ داده‌ای پاک نمی‌شود و با تمدید فوراً باز می‌شود.'),
+    hint(
+      `اگر اشتراک تمام شود، فروشگاه ${fa(GRACE_DAYS)} روز دیگر باز می‌ماند؛ بعد بسته می‌شود (مشتری‌ها نه محصولی می‌بینند نه سفارش می‌دهند). ` +
+        `داده‌ها ${fa(retentionDays)} روز دیگر نگه داشته می‌شود و با تمدید همه‌چیز فوراً برمی‌گردد؛ بعد از آن پاک می‌شود.`,
+    ),
   ),
   keyboard: inline([button('➕ ساخت فروشگاه', PCB.newShop, 'success')], toHome()),
 });
@@ -204,14 +214,36 @@ export const deleteConfirm = (s: ShopRow): View => ({
   keyboard: inline([button('🗑 بله، حذف کن', PCB.deleteShopConfirm(s.id), 'danger'), button('انصراف', PCB.shop(s.id))]),
 });
 
-export const reminder = (s: ShopRow, stage: 1 | 2 | 3): View => ({
-  text:
-    stage === 1
-      ? sections(heading('⏰', 'اشتراک رو به پایان است'), `اشتراک فروشگاه ${botLink(s)} تا <b>${date(s.paid_until)}</b> معتبر است.`, 'برای اینکه فروشگاه‌تان بسته نشود، همین حالا تمدید کنید.')
-      : stage === 2
-        ? sections(heading('⚠️', 'اشتراک تمام شد'), `اشتراک فروشگاه ${botLink(s)} تمام شده. فروشگاه فقط <b>۳ روز</b> دیگر برای مشتری‌ها باز می‌ماند.`)
-        : sections(heading('🔒', 'فروشگاه بسته شد'), `فروشگاه ${botLink(s)} برای مشتری‌ها بسته شد. داده‌های شما محفوظ است و با تمدید، فوراً باز می‌شود.`),
-  keyboard: inline([button('💳 تمدید اشتراک', PCB.renew(s.id), 'success')]),
+export const reminder = (s: ShopRow, stage: ReminderStage, retentionDays: number): View => {
+  const deleteOn = `<b>${date(purgeAt(s.paid_until, retentionDays))}</b>`;
+  return {
+    text:
+      stage === 1
+        ? sections(heading('⏰', 'اشتراک رو به پایان است'), `اشتراک فروشگاه ${botLink(s)} تا <b>${date(s.paid_until)}</b> معتبر است.`, 'برای اینکه فروشگاه‌تان بسته نشود، همین حالا تمدید کنید.')
+        : stage === 2
+          ? sections(heading('⚠️', 'اشتراک تمام شد'), `اشتراک فروشگاه ${botLink(s)} تمام شده. فروشگاه فقط <b>${fa(GRACE_DAYS)} روز</b> دیگر برای مشتری‌ها باز می‌ماند.`)
+          : stage === 3
+            ? sections(
+                heading('🔒', 'فروشگاه بسته شد'),
+                `فروشگاه ${botLink(s)} بسته شد: مشتری‌ها نه محصولی می‌بینند و نه می‌توانند سفارش بدهند.`,
+                `داده‌های شما (محصولات، مشتری‌ها، سفارش‌ها) تا ${deleteOn} نگه داشته می‌شود و با تمدید، فوراً همه‌چیز برمی‌گردد.`,
+              )
+            : sections(
+                heading('🗑', 'داده‌های فروشگاه به‌زودی پاک می‌شود'),
+                `اگر فروشگاه ${botLink(s)} تا ${deleteOn} تمدید نشود، همه‌ی محصولات، مشتری‌ها و سفارش‌هایش <b>برای همیشه پاک می‌شود</b>.`,
+              ),
+    keyboard: inline([button('💳 تمدید اشتراک', PCB.renew(s.id), 'success')]),
+  };
+};
+
+/** Sent when a lapsed shop's data has been deleted. */
+export const purgedNotice = (s: ShopRow): View => ({
+  text: sections(
+    heading('🗑', 'داده‌های فروشگاه پاک شد'),
+    `مهلت نگهداری فروشگاه ${botLink(s)} تمام شد و داده‌هایش پاک شد. ربات هم از پلتفرم جدا شد.`,
+    hint('هر وقت خواستید، می‌توانید دوباره فروشگاه بسازید.'),
+  ),
+  keyboard: inline([button('➕ ساخت فروشگاه', PCB.newShop, 'success')]),
 });
 
 /* ---------- platform owner ---------- */
@@ -273,10 +305,11 @@ export const shopsList = (shops: ShopRow[], page: number, pages: number, now: nu
   ),
 });
 
-export const adminShopPage = (s: ShopRow, now: number, payments: SubscriptionPayment[], usage: ShopUsage): View => ({
+export const adminShopPage = (s: ShopRow, now: number, payments: SubscriptionPayment[], usage: ShopUsage, retentionDays: number): View => ({
   text: sections(
     `🤖 <b>${botLink(s)}</b>  ${hint(`#${s.id}`)}`,
     quote(`📌 ${statusLine(s, now)}\n👤 مالک: <code>${s.owner_chat_id}</code>\n🗓 ساخته‌شده: ${date(s.created_at)}`),
+    keptUntilLine(s, now, retentionDays),
     quote(
       `${usageLine(usage)}\n` +
         (s.plan === 'owner' ? '' : `🎚 سقف: ${s.daily_limit ? '<b>اختصاصی</b>' : 'پیش‌فرض پلن'}\n`) +
@@ -312,6 +345,10 @@ export const revenueView = (r: { month: number; total: number }, stats: { total:
 export const PLATFORM_SETTING_LABELS: Record<PlatformSettingKey, { button: string; prompt: string }> = {
   monthly_price: { button: '💰 قیمت ماهانه', prompt: 'قیمت اشتراک ماهانه را به <b>تومان</b> بفرستید (فقط عدد):' },
   trial_days: { button: '🎁 روزهای آزمایشی', prompt: 'تعداد <b>روزهای رایگان</b> فروشگاه جدید را بفرستید (۰ تا ۳۰):' },
+  retention_days: {
+    button: '🗄 مهلت نگهداری داده',
+    prompt: 'فروشگاهی که تمدید نکند، چند روز بعد از بسته شدن <b>داده‌هایش پاک شود</b>؟ (۷ تا ۳۶۵)',
+  },
   bank_info: { button: '🏦 اطلاعات کارت', prompt: 'اطلاعات <b>کارت</b> برای دریافت اشتراک را بفرستید:' },
   support: { button: '🗣 پشتیبانی', prompt: 'آیدی یا متن <b>پشتیبانی</b> پلتفرم را بفرستید:' },
   trial_daily_limit: { button: '🎁 سقف آزمایشی', prompt: 'سقف <b>پیام روزانه</b>ی هر فروشگاه آزمایشی را بفرستید (عدد):' },
@@ -328,11 +365,13 @@ export const settingsView = (values: Record<PlatformSettingKey, string>): View =
   text: sections(
     heading('⚙️', 'تنظیمات پلتفرم'),
     quote(
-      `💰 قیمت ماهانه: <b>${toman(Number(values.monthly_price))}</b>\n🎁 آزمایشی: <b>${fa(values.trial_days)}</b> روز\n🏦 ${e(values.bank_info)}\n🗣 ${e(values.support)}`,
+      `💰 قیمت ماهانه: <b>${toman(Number(values.monthly_price))}</b>\n🎁 آزمایشی: <b>${fa(values.trial_days)}</b> روز\n` +
+        `🗄 نگهداری داده‌ی فروشگاه بسته: <b>${fa(values.retention_days)}</b> روز\n🏦 ${e(values.bank_info)}\n🗣 ${e(values.support)}`,
     ),
   ),
   keyboard: inline(
     [button(PLATFORM_SETTING_LABELS.monthly_price.button, PCB.admin.editSetting('monthly_price')), button(PLATFORM_SETTING_LABELS.trial_days.button, PCB.admin.editSetting('trial_days'))],
+    [button(PLATFORM_SETTING_LABELS.retention_days.button, PCB.admin.editSetting('retention_days'))],
     [button(PLATFORM_SETTING_LABELS.bank_info.button, PCB.admin.editSetting('bank_info')), button(PLATFORM_SETTING_LABELS.support.button, PCB.admin.editSetting('support'))],
     backRow(PCB.admin.root, '🔙 پنل'),
   ),

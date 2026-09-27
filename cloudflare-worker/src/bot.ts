@@ -3,6 +3,7 @@ import { addDropped } from './db/usage';
 import type { Deps } from './deps';
 import { flooding, onceEvery } from './flood';
 import { registerAdminRoutes } from './handlers/admin';
+import { ADMIN_HOME } from './views/admin';
 import { registerUserRoutes } from './handlers/user';
 import { shopAccess } from './services/subscription';
 import { BotContext } from './telegram/BotContext';
@@ -17,6 +18,9 @@ export const BLOCKED_TEXT = '⛔ دسترسی شما به این ربات محد
 export const SLOW_DOWN_TEXT = '⏳ لطفاً کمی آهسته‌تر';
 export const CAPACITY_FULL_TEXT = '⏳ ظرفیت امروز این فروشگاه تکمیل شده است.\nلطفاً بعد از ساعت ۳:۳۰ بامداد دوباره سر بزنید. 🙏';
 export const ERROR_TEXT = '⚠️ مشکلی موقتی پیش آمد.\nلطفاً چند دقیقه‌ی دیگر دوباره امتحان کنید. 🙏';
+export const EXPIRED_ADMIN_TEXT = '🔒 اشتراک این فروشگاه تمام شده و فروشگاه بسته است.\nتا تمدید، فقط سفارش‌های ثبت‌شده را می‌توانید رسیدگی کنید.';
+export const SUSPENDED_ADMIN_TEXT = '⛔ این فروشگاه توسط پلتفرم متوقف شده است.\nبرای پیگیری با پشتیبانی پلتفرم تماس بگیرید.';
+const CLOSED_ADMIN_CALLBACKS = /^(a:root|a:orders(:\d+)?|a:order:.+|a:dialog:.+|a:cancel|noop)$/;
 export const ADMIN_CAPACITY_FULL_TEXT = '⛔ مصرف امروز این فروشگاه به سقف رسیده و ربات تا ساعت ۳:۳۰ بامداد پاسخ نمی‌دهد.\nبرای افزایش سقف با پشتیبانی پلتفرم تماس بگیرید.';
 
 /** Builds the routers once per request from the wired dependencies. */
@@ -60,6 +64,14 @@ export function createBot(d: Deps) {
       else await d.tg.sendMessage(ctx.chatId, CLOSED_TEXT);
       return;
     }
+    // A closed shop is closed for its admins too – they can only finish the orders customers already
+    // paid for. Renewing opens everything again; nothing is deleted until the retention period ends.
+    if (ctx.isAdmin && (access === 'expired' || access === 'suspended') && !(await closedAdminMayUse(ctx))) {
+      const text = access === 'suspended' ? SUSPENDED_ADMIN_TEXT : EXPIRED_ADMIN_TEXT;
+      if (cb) await d.tg.answerCallbackQuery(cb.id, text, true).catch(() => {});
+      else await d.tg.sendMessage(ctx.chatId, text);
+      return;
+    }
     // Keep the customer list current when someone changes their name or @username.
     if (user && (user.name !== ctx.firstName || user.username !== ctx.username)) {
       await d.users.upsert(ctx.chatId, ctx.firstName, ctx.username);
@@ -72,6 +84,13 @@ export function createBot(d: Deps) {
     } finally {
       await answered;
     }
+  }
+
+  /** What an admin of a closed shop may still do: the panel, paid orders, and talking to those buyers. */
+  async function closedAdminMayUse(ctx: BotContext): Promise<boolean> {
+    if (ctx.callbackData !== undefined) return CLOSED_ADMIN_CALLBACKS.test(ctx.callbackData);
+    if (['/start', '/admin', '/cancel', ADMIN_HOME].includes(ctx.text ?? '')) return true;
+    return (await d.sessions.get(ctx.chatId))?.flow === 'dialog';
   }
 
   /** Today's limit is reached: say so (once in a while, not on every message). */

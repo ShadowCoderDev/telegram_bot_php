@@ -469,6 +469,8 @@ export const SETTING_KEYS = Object.keys(SETTING_DEFAULTS) as SettingKey[];
 export const PLATFORM_SETTING_DEFAULTS = {
   monthly_price: '49000',
   trial_days: '7',
+  /** Days a lapsed shop's data is kept after it closes, before it is deleted. */
+  retention_days: '30',
   bank_info: 'شماره کارت هنوز تنظیم نشده است.',
   support: 'پشتیبانی تنظیم نشده',
   // Capacity (src/capacity.ts): each shop's daily cap on updates, and the Cloudflare quotas the
