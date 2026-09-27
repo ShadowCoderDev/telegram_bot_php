@@ -4,6 +4,7 @@ import m0003 from '../../migrations/0003_customers_and_abuse_guards.sql';
 import m0004 from '../../migrations/0004_multi_tenant.sql';
 import m0005 from '../../migrations/0005_cheaper_bookkeeping.sql';
 import m0006 from '../../migrations/0006_reads_that_scale.sql';
+import m0007 from '../../migrations/0007_data_retention.sql';
 
 /**
  * The Worker brings its own database up to date on first use, so a plain `wrangler deploy`
@@ -18,6 +19,7 @@ const MIGRATIONS: { name: string; sql: string }[] = [
   { name: '0004_multi_tenant.sql', sql: m0004 },
   { name: '0005_cheaper_bookkeeping.sql', sql: m0005 },
   { name: '0006_reads_that_scale.sql', sql: m0006 },
+  { name: '0007_data_retention.sql', sql: m0007 },
 ];
 
 /**

@@ -13,7 +13,7 @@ import { CB } from '../views/callbacks';
 import { fa, heading, hint, progress, quote, sections } from '../views/common';
 import { LIMITS, charCount, planLimits } from '../limits';
 import { toggleCheckoutField, type CheckoutField } from '../services/checkoutFields';
-import { daysLeft, shopAccess } from '../services/subscription';
+import { daysLeft, purgeAt, shopAccess } from '../services/subscription';
 
 const A = CB.admin;
 
@@ -51,6 +51,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
       d.usage.today(Math.floor(Date.now() / 1000)),
       d.limits(false),
     ]);
+    if (subscription && (subscription.access === 'expired' || subscription.access === 'suspended')) return v.closedAdminRoot(awaiting, subscription);
     return v.adminRoot(awaiting, subscription, { updates: today.updates, cap: limits.updates });
   };
   const showRoot = async (ctx: BotContext) => ctx.render(await rootView());
@@ -550,8 +551,9 @@ async function shopStats(d: Deps): Promise<v.ShopStats> {
 async function subscriptionInfo(d: Deps): Promise<v.SubscriptionInfo | undefined> {
   if (d.shop.plan === 'owner') return undefined;
   const now = Math.floor(Date.now() / 1000);
-  const platformBot = await d.platformSettings.raw('bot_username');
+  const [platformBot, retention] = await Promise.all([d.platformSettings.raw('bot_username'), d.platformSettings.get('retention_days')]);
   return {
+    purgeAt: purgeAt(d.shop.paid_until, Number(retention) || 30),
     access: shopAccess(d.shop, now),
     trial: d.shop.plan === 'trial',
     paidUntil: d.shop.paid_until,

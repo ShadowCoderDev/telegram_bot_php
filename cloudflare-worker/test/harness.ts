@@ -42,11 +42,13 @@ let messageId = 1000;
  * Worker's redelivery check anyway.
  */
 export async function send(url: string, init: RequestInit): Promise<Response> {
-  try {
-    return await fetch(url, init);
-  } catch (err) {
-    if (String((err as Error).cause).includes('other side closed')) return fetch(url, init);
-    throw err;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fetch(url, init);
+    } catch (err) {
+      // The pool may hold several such connections; each failed try discards one.
+      if (attempt >= 4 || !String((err as Error).cause).includes('other side closed')) throw err;
+    }
   }
 }
 

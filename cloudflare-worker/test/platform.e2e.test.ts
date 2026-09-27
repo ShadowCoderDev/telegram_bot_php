@@ -177,12 +177,24 @@ describe('SaaS platform', () => {
     expect(last(SHOP_TOKEN, CUSTOMER)).not.toContain('در دسترس نیست');
   });
 
-  it('closes the shop to customers after expiry and grace, but not to its admin', async () => {
+  it('closes the shop after expiry and grace: no products or orders for customers, only paid orders for its admin', async () => {
     sql(`UPDATE shops SET paid_until = ${now() - 4 * 86400} WHERE id = 2`);
     await shop.text(CUSTOMER, '/start');
     expect(last(SHOP_TOKEN, CUSTOMER)).toContain('موقتاً در دسترس نیست');
+    await shop.press(CUSTOMER, 'shop');
+    expect(calls.at(-1)).toMatchObject({ method: 'answerCallbackQuery', params: { show_alert: true } });
+
     await shop.text(SELLER, '/start');
-    expect(byBot(SHOP_TOKEN, SELLER).at(-2)!.params.text).toContain('فروشگاه برای مشتری‌ها بسته است');
+    const panel = byBot(SHOP_TOKEN, SELLER).at(-2)!;
+    expect(panel.params.text).toContain('فروشگاه بسته است');
+    expect(panel.params.text).toContain('نگه داشته می‌شود'); // until when the data is kept
+    expect(buttons(panel).map((b) => b.callback_data ?? b.url)).toEqual(['https://t.me/builder_bot?start=renew_2', 'a:orders']);
+    // Everything else is locked until renewal; paid orders can still be handled.
+    await shop.press(SELLER, 'a:cat:add');
+    expect(calls.at(-1)).toMatchObject({ method: 'answerCallbackQuery', params: { show_alert: true } });
+    expect(calls.at(-1)!.params.text).toContain('اشتراک این فروشگاه تمام شده');
+    await shop.press(SELLER, 'a:orders');
+    expect(last(SHOP_TOKEN, SELLER)).toContain('سفارش');
   });
 
   it('renews by receipt; the platform owner approves once, and the shop reopens', async () => {
@@ -216,8 +228,8 @@ describe('SaaS platform', () => {
 
   it('sends each expiry reminder once from the hourly cron', async () => {
     sql(`UPDATE shops SET paid_until = ${now() + 2 * 86400}, reminder_stage = 0 WHERE id = 2`);
-    await fetch(`http://127.0.0.1:${PORT}/__scheduled?cron=0+*+*+*+*`);
-    await fetch(`http://127.0.0.1:${PORT}/__scheduled?cron=0+*+*+*+*`);
+    await send(`http://127.0.0.1:${PORT}/__scheduled?cron=0+*+*+*+*`, {});
+    await send(`http://127.0.0.1:${PORT}/__scheduled?cron=0+*+*+*+*`, {});
     const reminders = byBot(PLATFORM_TOKEN, SELLER).filter((c) => String(c.params.text).includes('اشتراک رو به پایان است'));
     expect(reminders).toHaveLength(1);
     expect(buttons(reminders[0])[0]!.callback_data).toBe('p:renew:2');
@@ -318,11 +330,30 @@ describe('SaaS platform', () => {
     await platform.press(OWNER, 'pa:set:quota_writes');
     await platform.text(OWNER, '1000');
     sql('UPDATE bot_usage SET rows_written = rows_written + 5000 WHERE shop_id = 2');
-    await fetch(`http://127.0.0.1:${PORT}/__scheduled?cron=0+*+*+*+*`);
-    await fetch(`http://127.0.0.1:${PORT}/__scheduled?cron=0+*+*+*+*`);
+    await send(`http://127.0.0.1:${PORT}/__scheduled?cron=0+*+*+*+*`, {});
+    await send(`http://127.0.0.1:${PORT}/__scheduled?cron=0+*+*+*+*`, {});
     const alarms = byBot(PLATFORM_TOKEN, OWNER).filter((c) => String(c.params.text).includes('نزدیک سقف Cloudflare'));
     expect(alarms).toHaveLength(1);
     expect(buttons(alarms[0])[0]!.callback_data).toBe('pa:cap');
     expect(byBot(PLATFORM_TOKEN, SELLER).some((c) => String(c.params.text).includes('Cloudflare'))).toBe(false);
+  });
+
+  it('warns a week before deleting a lapsed shop\'s data, then deletes it (and only it) after the retention period', async () => {
+    sql("INSERT INTO settings (shop_id, setting_key, setting_value) VALUES (0, 'retention_days', '30') ON CONFLICT DO UPDATE SET setting_value = '30'");
+    const closedDaysAgo = (days: number) => sql(`UPDATE shops SET paid_until = ${now() - (3 + days) * 86400}, reminder_stage = 3 WHERE id = 2`);
+    closedDaysAgo(25); // 5 days before deletion
+    await send(`http://127.0.0.1:${PORT}/__scheduled?cron=0+*+*+*+*`, {});
+    expect(last(PLATFORM_TOKEN, SELLER)).toContain('برای همیشه پاک می‌شود');
+    expect(await sqlValue('SELECT count(*) FROM categories WHERE shop_id = 2')).toBeGreaterThan(0);
+
+    closedDaysAgo(31);
+    await send(`http://127.0.0.1:${PORT}/__scheduled?cron=0+*+*+*+*`, {});
+    expect(last(PLATFORM_TOKEN, SELLER)).toContain('داده‌های فروشگاه پاک شد');
+    for (const table of ['categories', 'users', 'settings', 'orders']) expect(await sqlValue(`SELECT count(*) FROM ${table} WHERE shop_id = 2`), table).toBe(0);
+    expect(await sqlValue("SELECT status || ':' || (purged_at IS NOT NULL) || ':' || length(bot_token_enc) FROM shops WHERE id = 2")).toBe('deleted:1:0');
+    expect(await sqlValue('SELECT count(*) FROM subscription_payments WHERE shop_id = 2')).toBeGreaterThan(0); // the platform's accounts stay
+    expect(await sqlValue("SELECT count(*) FROM settings WHERE shop_id = 0")).toBeGreaterThan(0); // other shops untouched
+    expect(calls.some((c) => c.token === SHOP_TOKEN && c.method === 'deleteWebhook')).toBe(true);
+    expect((await shop.text(CUSTOMER, '/start')).status).toBe(403);
   });
 });

@@ -62,6 +62,8 @@ export interface SubscriptionInfo {
   daysLeft: number;
   /** Link to the platform bot's renewal flow for this shop. */
   renewUrl?: string;
+  /** When the data is deleted if the shop stays unpaid. */
+  purgeAt?: number;
 }
 
 const subscriptionLine = (s: SubscriptionInfo): string => {
@@ -74,7 +76,7 @@ const subscriptionLine = (s: SubscriptionInfo): string => {
     case 'grace':
       return `⚠️ <b>اشتراک تمام شده.</b> فروشگاه فقط تا <b>${fa(GRACE_DAYS + s.daysLeft)}</b> روز دیگر برای مشتری‌ها باز است؛ لطفاً تمدید کنید.`;
     case 'expired':
-      return '🔒 <b>اشتراک تمام شده و فروشگاه برای مشتری‌ها بسته است.</b> با تمدید، فوراً باز می‌شود.';
+      return '🔒 <b>اشتراک تمام شده و فروشگاه بسته است.</b> با تمدید، فوراً باز می‌شود.';
     case 'suspended':
       return '⛔ <b>این فروشگاه توسط پلتفرم متوقف شده است.</b> با پشتیبانی پلتفرم تماس بگیرید.';
   }
@@ -115,6 +117,21 @@ export const adminRoot = (awaitingReview = 0, subscription?: SubscriptionInfo, u
     [button('✏️ محصولات', A.products), button('📂 دسته‌بندی‌ها', A.categories)],
     [button('❓ سوالات متداول', A.faqs), button('⚙️ تنظیمات', A.settings)],
     [button('👀 نمایش منوی کاربر', CB.home)],
+  ),
+});
+
+/** The panel of a closed shop (subscription over, or suspended): renew, and finish paid orders. */
+export const closedAdminRoot = (awaitingReview: number, subscription: SubscriptionInfo): View => ({
+  text: sections(
+    heading('🔒', 'فروشگاه بسته است'),
+    subscriptionLine(subscription),
+    'مشتری‌ها فعلاً نه محصولی می‌بینند و نه می‌توانند سفارش بدهند. شما فقط سفارش‌هایی را که قبلاً پرداخت شده‌اند رسیدگی می‌کنید.',
+    awaitingReview ? `🟡 <b>${fa(awaitingReview)}</b> سفارش منتظر تایید شماست.` : '',
+    subscription.purgeAt ? `🗄 همه‌ی داده‌ها تا <b>${formatPersianDate(subscription.purgeAt).split(' - ')[0]}</b> نگه داشته می‌شود؛ با تمدید، فوراً همه‌چیز برمی‌گردد.` : '',
+  ),
+  keyboard: inline(
+    ...(subscription.renewUrl && subscription.access !== 'suspended' ? [[urlButton('💳 تمدید اشتراک', subscription.renewUrl, 'success')]] : []),
+    [button(awaitingReview ? `🧾 سفارشات (🟡 ${fa(awaitingReview)})` : '🧾 سفارشات', A.orders, 'primary')],
   ),
 });
 

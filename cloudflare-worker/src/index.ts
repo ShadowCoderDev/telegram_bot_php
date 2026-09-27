@@ -4,7 +4,7 @@ import { ensureSchema } from './db/migrate';
 import { addPendingUsage } from './db/usage';
 import { createDeps } from './deps';
 import type { Env } from './env';
-import { checkCapacity, createPlatformBot, createPlatformDeps, sendReminders } from './platform';
+import { checkCapacity, createPlatformBot, createPlatformDeps, purgeLapsedShops, sendReminders } from './platform';
 import { FileStore } from './services/FileStore';
 import { statusPage } from './setup';
 import { TelegramClient } from './telegram/TelegramClient';
@@ -19,7 +19,7 @@ import { sameSecret } from './crypto';
  *   POST /platform       the platform bot (create / renew shops, owner panel)
  *   GET  /               status page; also connects the webhooks (first-time setup)
  *   GET  /files/<key>    public product images from R2 (only when R2 is configured)
- *   cron (hourly)        subscription expiry reminders, capacity alarm
+ *   cron (hourly)        expiry reminders, deleting lapsed shops' data, capacity alarm
  *
  * Every D1 query goes through a meter; what a request cost is added to its bot's daily usage
  * (src/db/usage.ts) – the numbers behind the daily caps and the capacity page.
@@ -67,6 +67,7 @@ export default {
       await ensureSchema(env.DB);
       const d = createPlatformDeps(env, '');
       await sendReminders(d);
+      await purgeLapsedShops(d);
       await checkCapacity(d);
     } finally {
       addPendingUsage(0, usage); // the cron's own cost counts as the platform's
