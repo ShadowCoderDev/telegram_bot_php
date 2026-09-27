@@ -15,6 +15,7 @@ import { PLATFORM_SETTING_DEFAULTS } from '../src/db/repositories';
 import { UNCAPPED, utcDay } from '../src/db/usage';
 import { flooding, onceEvery } from '../src/flood';
 import { dueReminder, purgeAt } from '../src/services/subscription';
+import { LESSONS, lessonView } from '../src/views/tutorial';
 
 describe('persian utils', () => {
   it('normalises Persian and Arabic digits', () => {
@@ -247,5 +248,18 @@ describe('subscription reminders and data retention', () => {
     expect(dueReminder(shop(t - 27 * D, 3), t, 30)).toBe(4);
     expect(dueReminder(shop(t - 27 * D, 4), t, 30)).toBe(0);
     expect(dueReminder({ ...shop(t - 27 * D), status: 'suspended' as const }, t, 30)).toBe(0);
+  });
+});
+
+describe('tutorial', () => {
+  it('fits every lesson in a photo caption and links each one to the next', () => {
+    LESSONS.forEach((_, i) => {
+      const v = lessonView(i + 1, 'PHOTO', true);
+      expect(v.text.length, `lesson ${i + 1}`).toBeLessThanOrEqual(1024);
+      const data = JSON.stringify(v.keyboard);
+      if (i + 1 < LESSONS.length) expect(data).toContain(`p:learn:${i + 2}`);
+      if (i > 0) expect(data).toContain(`p:learn:${i}`);
+    });
+    expect(JSON.stringify(lessonView(1, null, false).keyboard)).not.toContain('pa:learnpic');
   });
 });

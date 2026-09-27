@@ -64,6 +64,8 @@ export interface SubscriptionInfo {
   renewUrl?: string;
   /** When the data is deleted if the shop stays unpaid. */
   purgeAt?: number;
+  /** The platform's step-by-step tutorial. */
+  learnUrl?: string;
 }
 
 const subscriptionLine = (s: SubscriptionInfo): string => {
@@ -117,6 +119,7 @@ export const adminRoot = (awaitingReview = 0, subscription?: SubscriptionInfo, u
     [button('✏️ محصولات', A.products), button('📂 دسته‌بندی‌ها', A.categories)],
     [button('❓ سوالات متداول', A.faqs), button('⚙️ تنظیمات', A.settings)],
     [button('👀 نمایش منوی کاربر', CB.home)],
+    ...(subscription?.learnUrl ? [[urlButton('📚 آموزش استفاده از ربات', subscription.learnUrl)]] : []),
   ),
 });
 

@@ -559,5 +559,6 @@ async function subscriptionInfo(d: Deps): Promise<v.SubscriptionInfo | undefined
     paidUntil: d.shop.paid_until,
     daysLeft: daysLeft(d.shop.paid_until, now),
     renewUrl: platformBot ? `https://t.me/${platformBot}?start=renew_${d.shop.id}` : undefined,
+    learnUrl: platformBot ? `https://t.me/${platformBot}?start=learn` : undefined,
   };
 }
