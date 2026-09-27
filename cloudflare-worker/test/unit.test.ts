@@ -16,6 +16,7 @@ import { UNCAPPED, utcDay } from '../src/db/usage';
 import { flooding, onceEvery } from '../src/flood';
 import { dueReminder, purgeAt } from '../src/services/subscription';
 import { LESSONS, lessonView } from '../src/views/tutorial';
+import { splitIcon } from '../src/handlers/admin';
 
 describe('persian utils', () => {
   it('normalises Persian and Arabic digits', () => {
@@ -261,5 +262,14 @@ describe('tutorial', () => {
       if (i > 0) expect(data).toContain(`p:learn:${i}`);
     });
     expect(JSON.stringify(lessonView(1, null, false).keyboard)).not.toContain('pa:learnpic');
+  });
+});
+
+describe('category typed while adding a product', () => {
+  it('takes a leading emoji as the icon', () => {
+    expect(splitIcon('📚 کتاب زبان')).toEqual({ icon: '📚', name: 'کتاب زبان' });
+    expect(splitIcon('❤️عطر')).toEqual({ icon: '❤️', name: 'عطر' });
+    expect(splitIcon(' کفش ')).toEqual({ icon: '📂', name: 'کفش' });
+    expect(splitIcon('📚').name).toBe('');
   });
 });

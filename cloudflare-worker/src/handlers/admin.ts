@@ -244,11 +244,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
       .callback(/^a:prod:newcat:(\d+)$/, async (ctx, [catId]) => {
         const s = await d.sessions.get<Partial<ProductDraft>>(ctx.chatId);
         if (s?.flow !== FLOW.product || s.step !== 'category') return ctx.render(v.done('❌ فرایند افزودن محصول یافت نشد. دوباره شروع کنید.'));
-        const draft = { ...s.data, category_id: Number(catId) } as ProductDraft;
-        const id = await d.products.create(draft);
-        if (id === null) return ctx.render(v.done('❌ دسته‌بندی نامعتبر است. دوباره شروع کنید.'));
-        await d.sessions.clear(ctx.chatId);
-        await ctx.render(v.done(sections(heading('✅', 'محصول اضافه شد'), quote(`📘 <b>${e(draft.title)}</b>  ${hint(`#${id}`)}`))));
+        await saveProduct(ctx, d, { ...s.data, category_id: Number(catId) } as ProductDraft);
       })
 
       /* ----- orders ----- */
@@ -511,22 +507,61 @@ async function addProductStep(ctx: BotContext, s: Session<Data>, d: Deps, text: 
     case 'image': {
       const image = text === '-' ? { image_url: '', image_file_id: '' } : readImage(ctx);
       if (!image) return ctx.reply(v.prompt(BAD_IMAGE));
+      // No dead end at the last step: without categories the admin names one right here, and
+      // nothing typed so far is lost.
       const cats = await d.categories.list(true);
-      if (!cats.length) {
-        await d.sessions.clear(ctx.chatId);
-        return ctx.reply(v.done(sections(heading('⚠️', 'دسته‌بندی فعالی وجود ندارد'), hint('اول یک دسته‌بندی بسازید، بعد محصول اضافه کنید.'))));
-      }
       await d.sessions.set(ctx.chatId, s.flow, 'category', { ...data, ...image });
+      const title = `${heading('📝', 'افزودن محصول')}\n${progress(7, PRODUCT_STEPS)}`;
+      if (!cats.length) {
+        return ctx.reply(
+          v.prompt(sections(title, '📂 هنوز <b>دسته‌بندی</b> فعالی ندارید؛ مشکلی نیست!', `👇 <b>اسم یک دسته‌بندی</b> بفرستید تا ساخته شود و این محصول در آن قرار بگیرد.\n${hint('مثال: 📚 کتاب زبان  (ایموجی اول اسم اختیاری است)')}`)),
+        );
+      }
       return ctx.reply(
-        v.categoryPicker(cats, sections(`${heading('📝', 'افزودن محصول')}\n${progress(7, PRODUCT_STEPS)}`, '📂 <b>دسته‌بندی</b> این محصول را انتخاب کنید:'), (c) => A.newProductCategory(c.id), [
-          button('لغو عملیات ❌', A.cancel),
-        ]),
+        v.categoryPicker(
+          cats,
+          sections(title, '📂 <b>دسته‌بندی</b> این محصول را انتخاب کنید:', hint('یا اسم یک دسته‌بندی جدید را بفرستید تا همین‌جا ساخته شود.')),
+          (c) => A.newProductCategory(c.id),
+          [button('لغو عملیات ❌', A.cancel)],
+        ),
       );
     }
-    case 'category':
-      return ctx.reply({ text: '👆 لطفاً دسته‌بندی را از دکمه‌های بالا انتخاب کنید.' });
+    case 'category': {
+      // A new category, typed at the last step of adding a product.
+      const { name, icon } = splitIcon(text);
+      if (!name) return ctx.reply({ text: '👆 یک دسته‌بندی را از دکمه‌ها انتخاب کنید، یا اسم دسته‌بندی جدید را بفرستید.' });
+      if (charCount(name) > LIMITS.categoryName) return ctx.reply(v.prompt(`⚠️ اسم دسته‌بندی حداکثر ${LIMITS.categoryName} کاراکتر باشد.`));
+      const max = planLimits(d.shop.plan).categories;
+      if ((await d.categories.list(false)).length >= max) {
+        return ctx.reply({ text: `⚠️ به سقف ${max} دسته‌بندی رسیده‌اید؛ یکی از دسته‌بندی‌های بالا را انتخاب کنید.` });
+      }
+      const categoryId = await d.categories.create(name, icon);
+      return saveProduct(ctx, d, { ...data, category_id: categoryId } as ProductDraft, `${icon} ${name}`);
+    }
   }
   await ctx.reply(v.prompt('⚠️ لطفاً یک متن ارسال کنید.'));
+}
+
+/** Creates the product from the finished draft and ends the flow. */
+async function saveProduct(ctx: BotContext, d: Deps, draft: ProductDraft, newCategory?: string): Promise<void> {
+  const id = await d.products.create(draft);
+  if (id === null) return ctx.render(v.done('❌ دسته‌بندی نامعتبر است. دوباره شروع کنید.'));
+  await d.sessions.clear(ctx.chatId);
+  await ctx.render(
+    v.done(
+      sections(
+        heading('✅', 'محصول اضافه شد'),
+        quote(`📘 <b>${e(draft.title)}</b>  ${hint(`#${id}`)}`),
+        newCategory && `📂 دسته‌بندی جدید «${e(newCategory)}» هم ساخته شد.`,
+      ),
+    ),
+  );
+}
+
+/** "📚 کتاب زبان" → icon 📚 and name "کتاب زبان"; without a leading emoji the icon is 📂. */
+export function splitIcon(text: string): { name: string; icon: string } {
+  const m = /^(\p{Extended_Pictographic}\uFE0F?)\s*(.*)$/su.exec(text.trim());
+  return m ? { icon: m[1]!, name: m[2]!.trim() } : { icon: '📂', name: text.trim() };
 }
 
 /** How long the stats page reuses its numbers: totals read every row they count. */
