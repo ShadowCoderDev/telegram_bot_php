@@ -124,6 +124,27 @@ describe('SaaS platform', () => {
     expect((await post('/webhook', 'anything', msg(SELLER, '/start'))).status).toBe(403); // no owner shop configured
   });
 
+  it('teaches sellers step by step, with screenshots the platform owner uploads', async () => {
+    await platform.text(SELLER, '/start');
+    expect(buttons(byBot(PLATFORM_TOKEN, SELLER).at(-1)).map((b) => b.callback_data)).toContain('p:learn');
+    await platform.press(SELLER, 'p:learn');
+    expect(last(PLATFORM_TOKEN, SELLER)).toContain('آموزش گام‌به‌گام');
+    await platform.press(SELLER, 'p:learn:1');
+    expect(last(PLATFORM_TOKEN, SELLER)).toContain('BotFather');
+    expect(buttons(byBot(PLATFORM_TOKEN, SELLER).at(-1)).some((b) => b.callback_data?.startsWith('pa:'))).toBe(false);
+
+    await platform.press(OWNER, 'p:learn:2');
+    await platform.press(OWNER, 'pa:learnpic:2');
+    await platform.photo(OWNER, 'LESSON2_SCREENSHOT');
+    await platform.press(SELLER, 'p:learn:2');
+    const shown = byBot(PLATFORM_TOKEN, SELLER).at(-1)!;
+    expect(shown).toMatchObject({ method: 'sendPhoto', params: { photo: 'LESSON2_SCREENSHOT' } });
+    expect(shown.params.caption).toContain('ساختن فروشگاه');
+
+    await platform.text(SELLER, '/start learn'); // deep link from a shop's admin panel
+    expect(last(PLATFORM_TOKEN, SELLER)).toContain('آموزش گام‌به‌گام');
+  });
+
   it('lets a seller create a shop from a BotFather token', async () => {
     await platform.text(SELLER, '/start');
     expect(last(PLATFORM_TOKEN, SELLER)).toContain('49,000');
@@ -154,6 +175,7 @@ describe('SaaS platform', () => {
     const root = byBot(SHOP_TOKEN, SELLER).find((c) => String(c.params.text).includes('پنل مدیریت'))!;
     expect(root.params.text).toContain('دوره‌ی آزمایشی');
     expect(buttons(root).find((b) => b.url)?.url).toBe('https://t.me/builder_bot?start=renew_2');
+    expect(buttons(root).map((b) => b.url)).toContain('https://t.me/builder_bot?start=learn');
 
     await shop.press(SELLER, 'a:cat:add');
     await shop.text(SELLER, 'Seller category');

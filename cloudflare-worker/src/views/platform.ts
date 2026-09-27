@@ -99,6 +99,7 @@ export const welcome = (price: number, trialDays: number, isPlatformAdmin: boole
   keyboard: inline(
     [button('➕ ساخت فروشگاه جدید', PCB.newShop, 'success')],
     [button('🏪 فروشگاه‌های من', PCB.shops, 'primary')],
+    [button('📚 آموزش گام‌به‌گام', 'p:learn')],
     [button('📋 امکانات و محدودیت‌ها', PCB.limits), button('🗣 پشتیبانی', PCB.support)],
     ...(isPlatformAdmin ? [[button('🔐 پنل مدیریت پلتفرم', PCB.admin.root)]] : []),
   ),
@@ -113,6 +114,7 @@ export const newShopInstructions = (): View => ({
         '۳. BotFather یک <b>توکن</b> می‌دهد؛ مثل:\n<code>123456789:AAH...</code>',
     ),
     '👇 همان توکن را همین‌جا بفرستید:',
+    hint('بلد نیستید؟ «📚 آموزش» در منوی اصلی، قدم‌به‌قدم با عکس نشان می‌دهد.'),
     hint('توکن رمزنگاری‌شده ذخیره می‌شود و پیام شما بلافاصله پاک می‌شود.'),
     CANCEL_HINT,
   ),
@@ -125,7 +127,10 @@ export const shopCreated = (s: ShopRow, trialDays: number): View => ({
     `👇 حالا به ربات فروشگاه‌تان بروید و <b>/start</b> را بزنید؛ شما ادمین آن هستید و پنل مدیریت را می‌بینید.`,
     hint('اول از «⚙️ تنظیمات» نام فروشگاه و شماره کارت را وارد کنید، بعد دسته‌بندی و محصول اضافه کنید.'),
   ),
-  keyboard: inline([urlButton(`🤖 رفتن به @${s.bot_username}`, `https://t.me/${s.bot_username}`, 'success')], [button('🏪 فروشگاه‌های من', PCB.shops)]),
+  keyboard: inline(
+    [urlButton(`🤖 رفتن به @${s.bot_username}`, `https://t.me/${s.bot_username}`, 'success')],
+    [button('📚 قدم بعدی: آموزش', 'p:learn:3'), button('🏪 فروشگاه‌های من', PCB.shops)],
+  ),
 });
 
 export const myShops = (shops: ShopRow[], now: number): View =>

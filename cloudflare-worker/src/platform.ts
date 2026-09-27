@@ -21,6 +21,7 @@ import { shopClaimCode } from './tenancy';
 import { formatPersianDate, parseAmount, tehranDayAndMonthStart } from './utils/persian';
 import { CANCEL_HINT, heading, num, sections } from './views/common';
 import * as pv from './views/platform';
+import { LEARN, LESSONS, lessonPhotoKey, lessonView, tutorialIndex } from './views/tutorial';
 
 const { PCB } = pv;
 const PLATFORM_FULL_TEXT = '⏳ ظرفیت امروز ربات تکمیل شده است.\nلطفاً بعد از ساعت ۳:۳۰ بامداد دوباره سر بزنید. 🙏';
@@ -28,7 +29,7 @@ const now = () => Math.floor(Date.now() / 1000);
 
 /** How many shops one seller may own. */
 export const MAX_SHOPS_PER_SELLER = 3;
-const FLOW = { newShop: 'p_new_shop', changeToken: 'p_change_token', renew: 'p_renew', setting: 'pa_setting' } as const;
+const FLOW = { newShop: 'p_new_shop', changeToken: 'p_change_token', renew: 'p_renew', setting: 'pa_setting', lessonPhoto: 'pa_lesson_photo' } as const;
 const TOKEN_FORMAT = /^\d{5,15}:[A-Za-z0-9_-]{30,50}$/;
 
 export function createPlatformDeps(env: Env, origin: string) {
@@ -189,6 +190,10 @@ function registerSellerRoutes(router: Router, d: PlatformDeps): Router {
     const pending = (await d.payments.pendingCountForShop(shop.id)) > 0;
     await ctx.render(pv.shopPage(shop, now(), await shopClaimCode(d.masterKey, shop.id), pending, await shopUsage(d, shop), await retentionDays(d)));
   };
+  const lesson = async (ctx: BotContext, n: number) => {
+    if (n < 1 || n > LESSONS.length) return ctx.render(tutorialIndex());
+    await ctx.render(lessonView(n, (await d.settings.raw(lessonPhotoKey(n))) || null, ctx.isAdmin));
+  };
   const renew = async (ctx: BotContext, id: number) => {
     const shop = await ownedShop(d, ctx, id);
     if (!shop) return shops(ctx);
@@ -200,6 +205,7 @@ function registerSellerRoutes(router: Router, d: PlatformDeps): Router {
       await d.sessions.clear(ctx.chatId);
       const renewId = /^renew_(\d+)$/.exec(payload ?? '')?.[1];
       if (renewId) return renew(ctx, Number(renewId)); // deep link from a shop's admin panel
+      if (payload === 'learn') return ctx.render(tutorialIndex()); // deep link from a shop's admin panel
       await home(ctx);
     })
     .text('/cancel', async (ctx) => {
@@ -213,6 +219,9 @@ function registerSellerRoutes(router: Router, d: PlatformDeps): Router {
       await d.settings.addAdmin(ctx.chatId);
       await ctx.reply({ text: '✅ شما مدیر پلتفرم شدید. /start را بزنید.' });
     })
+    .text(['/help', '/learn'], (ctx) => ctx.render(tutorialIndex()))
+    .callback(LEARN.index, (ctx) => ctx.render(tutorialIndex()))
+    .callback(/^p:learn:(\d+)$/, (ctx, [n]) => lesson(ctx, Number(n)))
     .callback(PCB.home, home)
     .callback('noop', async () => {})
     .callback(PCB.shops, shops)
@@ -407,6 +416,15 @@ function registerAdminRoutes(router: Router, d: PlatformDeps): Router {
       await d.shops.setDailyLimit(Number(id), null);
       await shopPage(ctx, Number(id));
     })
+    // Screenshots for the tutorial: the platform owner sends one per lesson.
+    .callback(/^pa:learnpic:(\d+)$/, async (ctx, [n]) => {
+      await d.sessions.set(ctx.chatId, FLOW.lessonPhoto, 'photo', { lesson: Number(n) });
+      await ctx.reply({ text: sections(`🖼 عکس (اسکرین‌شات) <b>درس ${Number(n)}</b> را بفرستید:`, CANCEL_HINT) });
+    })
+    .callback(/^pa:learnpicdel:(\d+)$/, async (ctx, [n]) => {
+      await d.settings.set(lessonPhotoKey(Number(n)), '');
+      await ctx.render(lessonView(Number(n), null, true));
+    })
     .callback(PCB.admin.capacity, capacity)
     .callback(PCB.admin.capacitySettings, capacitySettingsPage)
     .callback(/^pa:shop:susp:(\d+)$/, async (ctx, [id]) => {
@@ -427,7 +445,14 @@ function registerAdminRoutes(router: Router, d: PlatformDeps): Router {
     })
     .fallback(async (ctx) => {
       if (ctx.isCallback) return false;
-      const s = await d.sessions.get<{ key: PlatformSettingKey }>(ctx.chatId);
+      const s = await d.sessions.get<{ key: PlatformSettingKey; lesson: number }>(ctx.chatId);
+      if (s?.flow === FLOW.lessonPhoto) {
+        const n = s.data.lesson;
+        if (!ctx.image) return ctx.reply({ text: sections('📸 لطفاً یک <b>عکس</b> بفرستید.', CANCEL_HINT) });
+        await d.settings.set(lessonPhotoKey(n), ctx.image.fileId);
+        await d.sessions.clear(ctx.chatId);
+        return ctx.reply(lessonView(n, ctx.image.fileId, true));
+      }
       if (s?.flow !== FLOW.setting) return false;
       const text = ctx.text ?? '';
       let value = text;
