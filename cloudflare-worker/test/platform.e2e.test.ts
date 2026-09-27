@@ -83,7 +83,7 @@ beforeAll(async () => {
       if (method === 'getMe') {
         if (token.startsWith('999999')) return res.end(JSON.stringify({ ok: false, error_code: 401, description: 'Unauthorized' }));
         const id = Number(token.split(':')[0]);
-        result = { id, is_bot: true, username: id === 100000 ? 'builder_bot' : `shop${id}_bot` };
+        result = { id, is_bot: true, first_name: `Shop ${id}`, username: id === 100000 ? 'builder_bot' : `shop${id}_bot` };
       }
       if (method === 'setWebhook' || method === 'deleteWebhook' || method === 'deleteMessage') result = true;
       res.setHeader('content-type', 'application/json');
@@ -158,6 +158,8 @@ describe('SaaS platform', () => {
     await shop.press(SELLER, 'a:cat:add');
     await shop.text(SELLER, 'Seller category');
     await shop.text(SELLER, '🧸');
+    await shop.text(CUSTOMER, '/start');
+    expect(byBot(SHOP_TOKEN, CUSTOMER).find((c) => String(c.params.text).includes('👋'))!.params.text).toContain('<b>Shop 555555</b>'); // the bot's name, not a placeholder
     await shop.press(CUSTOMER, 'shop');
     expect(last(SHOP_TOKEN, CUSTOMER)).not.toContain('فعلاً دسته‌بندی فعالی وجود ندارد');
     expect(buttons(byBot(SHOP_TOKEN, CUSTOMER).at(-1)).map((b) => b.text)).toContain('🧸 Seller category');

@@ -86,7 +86,7 @@ export async function provisionShop(d: PlatformDeps, ownerChatId: number, token:
   if (!TOKEN_FORMAT.test(token)) return { ok: false, reason: 'format' };
   if (token === d.env.PLATFORM_BOT_TOKEN || token === d.env.BOT_TOKEN) return { ok: false, reason: 'platform_bot' };
   const bot = d.botClient(token);
-  let me: { id: number; username?: string };
+  let me: { id: number; username?: string; first_name?: string };
   try {
     me = await bot.call('getMe');
   } catch {
@@ -106,6 +106,8 @@ export async function provisionShop(d: PlatformDeps, ownerChatId: number, token:
     id = existing.id;
   } else {
     id = await d.shops.create({ ownerChatId, botId: me.id, botUsername: username, tokenEnc, webhookSecret, paidUntil: now() + (await trialDays(d)) * DAY });
+    // Customers see the shop under its bot's name until the seller sets another one.
+    if (me.first_name?.trim()) await new SettingsRepository(d.env.DB, id).set('shop_name', me.first_name.trim());
   }
   try {
     await bot.setWebhook(`${d.origin}/webhook/${id}`, webhookSecret);

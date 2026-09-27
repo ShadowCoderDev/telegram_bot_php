@@ -456,7 +456,7 @@ export class FaqRepository extends Repository {
 /** Admin-editable settings and their defaults (a new seller's bot starts with these). */
 export const SETTING_DEFAULTS = {
   shop_name: 'فروشگاه ما',
-  welcome_text: 'به فروشگاه ما خوش آمدید ❤️',
+  welcome_text: 'خوش آمدید ❤️',
   track_prefix: 'ORD-',
   bank_info: 'شماره کارت هنوز تنظیم نشده است.',
   support: 'پشتیبانی تنظیم نشده',
@@ -486,7 +486,7 @@ export type PlatformSettingKey = keyof typeof PLATFORM_SETTING_DEFAULTS;
 export const PLATFORM_SETTING_KEYS = Object.keys(PLATFORM_SETTING_DEFAULTS) as PlatformSettingKey[];
 
 /** Internal values the bot keeps for itself (not shown in the settings menu). */
-type InternalKey = 'admin_chat_ids' | 'webhook_marker' | 'bot_username' | 'capacity_alert' | 'stats_cache';
+type InternalKey = 'admin_chat_ids' | 'webhook_marker' | 'bot_username' | 'capacity_alert' | 'stats_cache' | 'checkout_fields';
 
 /** Per-shop key/value settings with defaults; the platform uses the same table under shop 0. */
 export class SettingsRepository<K extends string = SettingKey> extends Repository {

@@ -1,4 +1,5 @@
 import type { SettingKey } from '../db/repositories';
+import type { CheckoutField } from '../services/checkoutFields';
 import type { AdminOrderAction } from '../services/orderStatus';
 
 /**
@@ -17,6 +18,8 @@ export const CB = {
   clearCart: 'cart:clear',
   removeItem: (itemId: number) => `cart:del:${itemId}`,
   checkout: 'checkout',
+  /** At the checkout name step: use the name from the customer's Telegram profile. */
+  useTelegramName: 'co:tgname',
   myOrders: 'orders',
   faqs: 'faqs',
   faq: (id: number) => `faq:${id}`,
@@ -31,6 +34,8 @@ export const CB = {
     admins: 'a:admins',
     removeAdmin: (chatId: number) => `a:admins:rm:${chatId}`,
     editSetting: (key: SettingKey) => `a:set:${key}`,
+    checkoutFields: 'a:cof',
+    toggleCheckoutField: (field: CheckoutField) => `a:cof:${field}`,
     faqs: 'a:faqs',
     addFaq: 'a:faq:add',
     faq: (id: number) => `a:faq:${id}`,

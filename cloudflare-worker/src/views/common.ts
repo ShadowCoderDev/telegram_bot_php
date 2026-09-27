@@ -45,3 +45,7 @@ export const lineItemBlock = (l: Pick<OrderLine, 'title' | 'price' | 'quantity'>
 export const itemsWithTotal = (lines: OrderLine[], totalLabel = 'جمع کل'): string =>
   lines.map((l, i) => lineItemBlock(l, lines.length > 1 ? i + 1 : undefined)).join('\n\n') +
   `\n\n🧾 <b>${totalLabel}: ${toman(cartTotal(lines))}</b>`;
+
+/** 👤 name / 📍 address / 📱 phone – only the ones the customer was asked for. */
+export const contactLines = (c: { name?: string | null; address?: string | null; phone?: string | null }): string =>
+  [c.name?.trim() && `👤 ${e(c.name.trim())}`, c.address && `📍 ${e(c.address)}`, c.phone && `📱 <code>${e(c.phone)}</code>`].filter(Boolean).join('\n');

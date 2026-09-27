@@ -12,6 +12,7 @@ import * as v from '../views/admin';
 import { CB } from '../views/callbacks';
 import { fa, heading, hint, progress, quote, sections } from '../views/common';
 import { LIMITS, charCount, planLimits } from '../limits';
+import { toggleCheckoutField, type CheckoutField } from '../services/checkoutFields';
 import { daysLeft, shopAccess } from '../services/subscription';
 
 const A = CB.admin;
@@ -138,7 +139,12 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
       .callback(A.stats, async (ctx) => ctx.render(v.statsView(await shopStats(d))))
 
       /* ----- settings ----- */
-      .callback(A.settings, async (ctx) => ctx.render(v.settingsMenu(await d.settings.getMany(SETTING_KEYS))))
+      .callback(A.settings, async (ctx) => ctx.render(v.settingsMenu(await d.settings.getMany(SETTING_KEYS), await d.checkoutFields())))
+      .callback(A.checkoutFields, async (ctx) => ctx.render(v.checkoutFieldsView(await d.checkoutFields())))
+      .callback(/^a:cof:(name|address|phone)$/, async (ctx, [field]) => {
+        await d.settings.set('checkout_fields', toggleCheckoutField(await d.checkoutFields(), field as CheckoutField));
+        await ctx.render(v.checkoutFieldsView(await d.checkoutFields()));
+      })
       .callback(A.admins, (ctx) => showAdmins(ctx))
       .callback(/^a:admins:rm:(\d+)$/, async (ctx, [chatId]) => {
         await d.settings.removeAdmin(Number(chatId));
@@ -393,7 +399,7 @@ async function adminFlowStep(ctx: BotContext, s: Session<Data>, d: Deps): Promis
       await d.settings.set(key, value);
       await d.sessions.clear(ctx.chatId);
       await ctx.reply({ text: '✅ تنظیمات با موفقیت به‌روزرسانی شد.' });
-      return ctx.reply(v.settingsMenu(await d.settings.getMany(SETTING_KEYS)));
+      return ctx.reply(v.settingsMenu(await d.settings.getMany(SETTING_KEYS), await d.checkoutFields()));
     }
 
     case FLOW.faq: {

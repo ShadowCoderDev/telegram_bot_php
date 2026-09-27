@@ -6,7 +6,8 @@ import type { View } from '../telegram/types';
 import { escapeHtml as e, money, truncate } from '../utils/format';
 import { formatPersianDate } from '../utils/persian';
 import { CB } from './callbacks';
-import { CANCEL_HINT, HR, expandable, fa, heading, hint, itemsWithTotal, progress, quote, sections, toman } from './common';
+import type { CheckoutField } from '../services/checkoutFields';
+import { CANCEL_HINT, HR, contactLines, expandable, fa, heading, hint, itemsWithTotal, progress, quote, sections, toman } from './common';
 
 const homeRow = (label = '🏠 منوی اصلی') => backRow(CB.home, label);
 
@@ -212,22 +213,26 @@ export const supportView = (support: string): View => ({
 
 /* ---------- checkout ---------- */
 
-const STEPS = 4;
-const stepView = (n: number, body: string, example?: string): View => ({
-  text: sections(`${heading('🧾', 'تکمیل خرید')}\n${progress(n, STEPS)}`, body, example && hint(`مثال: ${example}`), CANCEL_HINT),
+/** Step `n` of `total` (the enabled checkout fields, then payment). */
+const stepView = (n: number, total: number, body: string, example?: string): View => ({
+  text: sections(`${heading('🧾', 'تکمیل خرید')}\n${progress(n, total)}`, body, example && hint(`مثال: ${example}`), CANCEL_HINT),
 });
 
 export const checkoutPrompts = {
-  name: () => stepView(1, '👤 لطفاً <b>نام و نام خانوادگی</b> خود را بفرستید:', 'علی محمدی'),
-  badName: (): View => ({ text: sections('⚠️ لطفاً <b>نام و نام خانوادگی</b> را کامل بفرستید.', hint('مثال: علی محمدی')) }),
-  address: () => stepView(2, '📍 لطفاً <b>آدرس کامل</b> خود را بفرستید:', 'تهران، خیابان آزادی، پلاک ۱۲، واحد ۳'),
-  phone: () => stepView(3, '📱 لطفاً <b>شماره موبایل</b> خود را بفرستید:', '09123456789'),
+  name: (n: number, total: number, telegramName: string): View => ({
+    ...stepView(n, total, '👤 لطفاً <b>نام</b> خود را بفرستید:', 'علی محمدی'),
+    ...(telegramName.trim() && { keyboard: inline([button(`✅ همان «${truncate(telegramName, 24)}»`, CB.useTelegramName, 'primary')]) }),
+  }),
+  badName: (): View => ({ text: sections('⚠️ لطفاً <b>نام</b> خود را بفرستید.', hint('مثال: علی')) }),
+  address: (n: number, total: number) => stepView(n, total, '📍 لطفاً <b>آدرس</b> خود را بفرستید:', 'تهران، خیابان آزادی، پلاک ۱۲'),
+  phone: (n: number, total: number) => stepView(n, total, '📱 لطفاً <b>شماره موبایل</b> خود را بفرستید:', '09123456789'),
   badPhone: (): View => ({ text: sections('⚠️ شماره موبایل معتبر نیست.', hint('شماره باید ۱۱ رقم باشد و با ۰۹ شروع شود. مثال: 09123456789')) }),
-  payment: (bankInfo: string, total: number, validMinutes: number): View =>
+  payment: (n: number, total: number, bankInfo: string, amount: number, validMinutes: number): View =>
     stepView(
-      4,
+      n,
+      total,
       sections(
-        `💰 <b>مبلغ قابل پرداخت</b>\n${quote(`<b>${toman(total)}</b>`)}`,
+        `💰 <b>مبلغ قابل پرداخت</b>\n${quote(`<b>${toman(amount)}</b>`)}`,
         `💳 <b>اطلاعات واریز</b> ${hint('(برای کپی لمس کنید)')}\n<code>${e(bankInfo)}</code>`,
         '📸 بعد از واریز، <b>عکس رسید</b> را همین‌جا بفرستید.',
         hint(`⏳ این مبلغ تا ${fa(validMinutes)} دقیقه معتبر است.`),
@@ -247,7 +252,6 @@ export const checkoutPrompts = {
     ),
   }),
   tooLong: (max: number): View => ({ text: `⚠️ متن طولانی است؛ حداکثر ${fa(max)} کاراکتر بفرستید.` }),
-  addressTooShort: (): View => ({ text: sections('⚠️ آدرس خیلی کوتاه است.', hint('آدرس کامل شامل شهر، خیابان و پلاک را بفرستید.')) }),
   tooManyAwaiting: (max: number): View => ({
     text: sections(
       heading('⏳', 'سفارش‌های قبلی شما در حال بررسی است'),
@@ -271,6 +275,8 @@ export const checkoutPrompts = {
 
 export interface CheckoutData {
   orderId: number;
+  /** What this checkout asks for, fixed when it starts (older sessions: all three). */
+  fields?: CheckoutField[];
   firstName?: string;
   lastName?: string;
   address?: string;
@@ -286,7 +292,12 @@ export const receiptAccepted = (trackId: string, d: CheckoutData, lines: OrderLi
     heading('🎉', 'سفارش شما ثبت شد!'),
     `🧾 کد رهگیری: <code>${trackId}</code>`,
     quote(
-      `👤 ${e(`${d.firstName} ${d.lastName}`)}\n📍 ${e(d.address)}\n📱 ${e(d.phone)}\n💵 مبلغ: <b>${toman(cartTotal(lines))}</b>`,
+      [
+        contactLines({ name: [d.firstName, d.lastName].filter(Boolean).join(' '), address: d.address, phone: d.phone }),
+        `💵 مبلغ: <b>${toman(cartTotal(lines))}</b>`,
+      ]
+        .filter(Boolean)
+        .join('\n'),
     ),
     '⏳ وضعیت: <b>در انتظار تایید ادمین</b>',
     `از خرید شما سپاسگزاریم 🙏\n${hint('وضعیت سفارش را از بخش «سفارشات من» دنبال کنید.')}`,
