@@ -4,7 +4,7 @@
  */
 export const LIMITS = {
   name: 60,
-  addressMin: 10,
+  addressMin: 2,
   address: 300,
   /** One message relayed between a customer and the admin. */
   dialog: 3000,

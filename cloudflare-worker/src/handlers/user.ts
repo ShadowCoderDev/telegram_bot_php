@@ -1,8 +1,11 @@
 import type { Deps } from '../deps';
 import type { Session } from '../db/models';
+import { SETTING_DEFAULTS } from '../db/repositories';
 import { clampQty, stockProblems } from '../services/CartService';
+import { CHECKOUT_FIELDS, type CheckoutField } from '../services/checkoutFields';
 import type { BotContext } from '../telegram/BotContext';
 import type { Router } from '../telegram/Router';
+import type { View } from '../telegram/types';
 import { sameSecret } from '../crypto';
 import { LIMITS, MAX_AWAITING_REVIEW, charCount, planLimits } from '../limits';
 import { escapeHtml } from '../utils/format';
@@ -25,7 +28,19 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
     await d.user(ctx);
     await ctx.render(v.mainMenu(ctx.firstName, await shop()));
   };
-  const shop = () => d.settings.getMany(['shop_name', 'welcome_text']);
+  /** Shop name and welcome text. A shop that never set its name shows its bot's name, not a placeholder. */
+  const shop = async () => {
+    const info = await d.settings.getMany(['shop_name', 'welcome_text']);
+    if (info.shop_name === SETTING_DEFAULTS.shop_name && (await d.settings.raw('shop_name')) === null) {
+      const me = await d.tg.call<{ first_name?: string }>('getMe').catch(() => null);
+      const name = me?.first_name?.trim();
+      if (name) {
+        await d.settings.set('shop_name', name); // once: from now on it is a normal setting the admin can change
+        info.shop_name = name;
+      }
+    }
+    return info;
+  };
   const showShop = async (ctx: BotContext) => ctx.render(v.categoriesView(await d.categories.list(true)));
   const showCart = async (ctx: BotContext) => {
     const cart = await d.cart.contents(await d.user(ctx));
@@ -136,9 +151,17 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
         }
         const problems = stockProblems(cart.lines);
         if (problems.length) return ctx.render(v.stockProblemsView(problems));
-        const data: v.CheckoutData = { orderId: cart.order.id };
-        await d.sessions.set(ctx.chatId, CHECKOUT, 'name', data);
-        await ctx.render(v.checkoutPrompts.name());
+        const fields = await d.checkoutFields();
+        const data: v.CheckoutData = { orderId: cart.order.id, fields };
+        if (!fields.length) return showPayment(ctx, d, data); // the shop asks for nothing: straight to paying
+        await d.sessions.set(ctx.chatId, CHECKOUT, fields[0]!, data);
+        await ctx.render(askFor(ctx, fields[0]!, data));
+      })
+      // "✅ use my Telegram name" at the name step.
+      .callback(CB.useTelegramName, async (ctx) => {
+        const s = await d.sessions.get<v.CheckoutData>(ctx.chatId);
+        if (s?.flow === CHECKOUT && s.step === 'name') return checkoutStep(ctx, s, d, ctx.firstName);
+        await ctx.reply(v.mainMenu(ctx.firstName, await shop()));
       })
 
       /* ----- free input: checkout steps, buyer replies to admin ----- */
@@ -170,7 +193,27 @@ async function abortCheckout(chatId: number, d: Deps): Promise<boolean> {
   return true;
 }
 
-/** Locks current prices into the cart and shows the amount to pay (checkout step 4). */
+const fieldsOf = (data: v.CheckoutData): CheckoutField[] => data.fields ?? [...CHECKOUT_FIELDS];
+
+/** The question for one checkout field, numbered among this checkout's steps (fields, then payment). */
+function askFor(ctx: BotContext, field: CheckoutField, data: v.CheckoutData): View {
+  const fields = fieldsOf(data);
+  const n = fields.indexOf(field) + 1;
+  const total = fields.length + 1;
+  if (field === 'name') return v.checkoutPrompts.name(n, total, ctx.firstName);
+  return field === 'address' ? v.checkoutPrompts.address(n, total) : v.checkoutPrompts.phone(n, total);
+}
+
+/** Stores the answer to `done` and asks the next enabled field, or shows the payment step. */
+async function nextStep(ctx: BotContext, d: Deps, data: v.CheckoutData, done: CheckoutField): Promise<void> {
+  const fields = fieldsOf(data);
+  const next = fields[fields.indexOf(done) + 1];
+  if (!next) return showPayment(ctx, d, data);
+  await d.sessions.set(ctx.chatId, CHECKOUT, next, data);
+  await ctx.reply(askFor(ctx, next, data));
+}
+
+/** Locks current prices into the cart and shows the amount to pay (the last checkout step). */
 async function showPayment(ctx: BotContext, d: Deps, data: v.CheckoutData): Promise<void> {
   // Stock may have run out while the customer was typing their details.
   const problems = stockProblems(await d.orders.lines(data.orderId));
@@ -182,7 +225,8 @@ async function showPayment(ctx: BotContext, d: Deps, data: v.CheckoutData): Prom
   const { total } = await d.orders.lockedTotal(data.orderId);
   await d.sessions.set(ctx.chatId, CHECKOUT, 'receipt', { ...data, total, lockedAt: now() });
   const bank = await d.settings.get('bank_info');
-  await ctx.reply(v.checkoutPrompts.payment(bank, total, PRICE_LOCK_MINUTES));
+  const steps = fieldsOf(data).length + 1;
+  await ctx.reply(v.checkoutPrompts.payment(steps, steps, bank, total, PRICE_LOCK_MINUTES));
 }
 
 /**
@@ -198,29 +242,25 @@ async function lockStillValid(d: Deps, data: v.CheckoutData): Promise<boolean> {
 }
 
 /** One function per checkout step; each validates input, stores it and asks for the next value. */
-async function checkoutStep(ctx: BotContext, s: Session<v.CheckoutData>, d: Deps): Promise<void> {
-  const text = ctx.text;
-  const advance = (step: string, data: v.CheckoutData) => d.sessions.set(ctx.chatId, CHECKOUT, step, data);
+async function checkoutStep(ctx: BotContext, s: Session<v.CheckoutData>, d: Deps, input = ctx.text): Promise<void> {
+  const text = input?.trim();
 
   switch (s.step) {
     case 'name': {
-      const parts = text?.split(/\s+/) ?? [];
-      if (parts.length < 2 || text!.startsWith('/')) return ctx.reply(v.checkoutPrompts.badName());
-      if (charCount(text!) > LIMITS.name) return ctx.reply(v.checkoutPrompts.tooLong(LIMITS.name));
-      await advance('address', { ...s.data, firstName: parts[0], lastName: parts.slice(1).join(' ') });
-      return ctx.reply(v.checkoutPrompts.address());
+      // Any name will do – just "علی" too; nobody should be sent back for a missing surname.
+      if (!text || text.startsWith('/') || charCount(text) < 2) return ctx.reply(v.checkoutPrompts.badName());
+      if (charCount(text) > LIMITS.name) return ctx.reply(v.checkoutPrompts.tooLong(LIMITS.name));
+      return nextStep(ctx, d, { ...s.data, firstName: text, lastName: '' }, 'name');
     }
     case 'address': {
-      if (!text || text.startsWith('/')) return ctx.reply(v.checkoutPrompts.address());
+      if (!text || text.startsWith('/') || charCount(text) < LIMITS.addressMin) return ctx.reply(askFor(ctx, 'address', s.data));
       if (charCount(text) > LIMITS.address) return ctx.reply(v.checkoutPrompts.tooLong(LIMITS.address));
-      if (charCount(text) < LIMITS.addressMin) return ctx.reply(v.checkoutPrompts.addressTooShort());
-      await advance('phone', { ...s.data, address: text });
-      return ctx.reply(v.checkoutPrompts.phone());
+      return nextStep(ctx, d, { ...s.data, address: text }, 'address');
     }
     case 'phone': {
       const phone = toEnglishDigits(text ?? '').replace(/[\s-]/g, '');
       if (!isIranMobile(phone)) return ctx.reply(v.checkoutPrompts.badPhone());
-      return showPayment(ctx, d, { ...s.data, phone });
+      return nextStep(ctx, d, { ...s.data, phone }, 'phone');
     }
     case 'receipt': {
       const image = ctx.image;

@@ -15,6 +15,7 @@ const BUYER2 = 3003;
 const FLOODER = 4004;
 const GROUP = -5005;
 const CLAIMER = 6006;
+const SHOPPER = 7007;
 const SECRET = 'e2e-secret-0123456789';
 const TOKEN = 'TEST:TOKEN';
 const PERSIST = '.wrangler/e2e';
@@ -167,10 +168,14 @@ describe('shop bot end-to-end', () => {
     expect(lastText(BUYER)).toContain('مبلغ قابل پرداخت: 240,000 تومان');
 
     await press(BUYER, 'checkout');
-    await text(BUYER, 'Ali');
-    expect(lastText(BUYER)).toContain('کامل بفرستید');
-    await text(BUYER, 'Ali Mohammadi');
-    await text(BUYER, 'Tehran, Street 1');
+    expect(lastText(BUYER)).toContain('مرحله ۱ از ۴');
+    await text(BUYER, 'A');
+    expect(lastText(BUYER)).toContain('<b>نام</b> خود را بفرستید');
+    // One tap uses the name from their Telegram profile; a first name alone is fine, and so is a short address.
+    expect(buttons(lastWithButtons(BUYER)).map((b) => b.callback_data)).toContain('co:tgname');
+    await press(BUYER, 'co:tgname');
+    expect(lastText(BUYER)).toContain('آدرس');
+    await text(BUYER, 'Tehran');
     await text(BUYER, '۰۹۱۲۳۴۵۶۷۸');
     expect(lastText(BUYER)).toContain('معتبر نیست');
     await text(BUYER, '۰۹۱۲۳۴۵۶۷۸۹');
@@ -182,6 +187,8 @@ describe('shop bot end-to-end', () => {
     await setPrice(1, '150000');
     await photo(BUYER);
     expect(lastText(BUYER)).toContain('ORD-'); // default prefix until the seller sets one
+    expect(lastText(BUYER)).toContain('👤 U2002');
+    expect(lastText(BUYER)).toContain('📍 Tehran');
     expect(lastText(BUYER)).toContain('240,000');
 
     const alert = calls.filter((c) => c.params.chat_id === ADMIN && c.method === 'sendPhoto').at(-1)!;
@@ -395,6 +402,31 @@ describe('shop bot end-to-end', () => {
     const answered = sent(FLOODER).length;
     expect(answered).toBeGreaterThanOrEqual(100);
     expect(answered).toBeLessThan(130);
+  });
+
+  it('asks at checkout only for what the seller chose in the settings', async () => {
+    sql('UPDATE products SET inventory = 50 WHERE id = 1');
+    await press(ADMIN, 'a:cof');
+    await press(ADMIN, 'a:cof:address');
+    await press(ADMIN, 'a:cof:phone');
+    expect(lastText(ADMIN)).toContain('⬜️ 📍 آدرس');
+
+    await press(SHOPPER, 'add:1:1');
+    await press(SHOPPER, 'checkout');
+    expect(lastText(SHOPPER)).toContain('مرحله ۱ از ۲');
+    await text(SHOPPER, 'Sara');
+    expect(lastText(SHOPPER)).toContain('مبلغ قابل پرداخت');
+    expect(lastText(SHOPPER)).toContain('مرحله ۲ از ۲');
+
+    await press(ADMIN, 'a:cof:name'); // nothing to ask: straight to paying
+    await press(SHOPPER, 'checkout');
+    expect(lastText(SHOPPER)).toContain('مبلغ قابل پرداخت');
+
+    for (const f of ['name', 'address', 'phone']) await press(ADMIN, `a:cof:${f}`);
+    await press(ADMIN, 'a:settings');
+    expect(lastText(ADMIN)).toContain('هنگام خرید: 👤 نام، 📍 آدرس، 📱 شماره موبایل');
+    await text(SHOPPER, '/cancel');
+    await press(SHOPPER, 'cart:clear');
   });
 
   it('apologises instead of going silent when the database fails', async () => {

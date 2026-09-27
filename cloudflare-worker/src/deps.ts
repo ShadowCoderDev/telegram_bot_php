@@ -18,6 +18,7 @@ import { CartService } from './services/CartService';
 import { FileStore } from './services/FileStore';
 import { OrderService } from './services/OrderService';
 import { TelegramClient } from './telegram/TelegramClient';
+import { parseCheckoutFields, type CheckoutField } from './services/checkoutFields';
 
 /**
  * Composition root: builds every object once per request and hands them to handlers.
@@ -64,6 +65,8 @@ export function createDeps(env: Env, publicOrigin: string, shop: ShopContext) {
     /** Admins that can't be removed from the bot (shop owner, ADMIN_CHAT_IDS); /claim-ed ones are added per update. */
     envAdminIds: fixedAdmins,
     adminIds: fixedAdmins,
+    /** What customers are asked for at checkout (admin settings). */
+    checkoutFields: async (): Promise<CheckoutField[]> => parseCheckoutFields(await settings.raw('checkout_fields')),
     /** `/claim <code>` makes the sender an extra admin of this shop. */
     claimCode: shop.claimCode,
     /** Finds the shopper's row, creating it on first contact. */

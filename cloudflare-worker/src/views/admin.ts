@@ -4,13 +4,14 @@ import type { FullOrder } from '../services/OrderService';
 import { ALLOWED_ACTIONS, STATUS_FA, type AdminOrderAction } from '../services/orderStatus';
 import { WARN_SHARE } from '../capacity';
 import { UNCAPPED } from '../db/usage';
+import { CHECKOUT_FIELDS, type CheckoutField } from '../services/checkoutFields';
 import { GRACE_DAYS, type Access } from '../services/subscription';
 import { backRow, button, inline, replyKeyboard, urlButton } from '../telegram/keyboard';
 import type { ButtonStyle, InlineKeyboardButton, View } from '../telegram/types';
 import { escapeHtml as e, money, truncate } from '../utils/format';
 import { formatPersianDate } from '../utils/persian';
 import { CB } from './callbacks';
-import { CANCEL_HINT, expandable, fa, heading, hint, itemsWithTotal, num, progress, quote, sections, toman } from './common';
+import { CANCEL_HINT, contactLines, expandable, fa, heading, hint, itemsWithTotal, num, progress, quote, sections, toman } from './common';
 
 const A = CB.admin;
 const toAdminRoot = () => backRow(A.root, '🔙 پنل مدیریت');
@@ -157,7 +158,25 @@ export const SETTING_LABELS: Record<SettingKey, { button: string; prompt: string
   help_text: { button: '📝 متن راهنما', prompt: 'متن جدید <b>راهنما</b> را بفرستید:' },
 };
 
-export const settingsMenu = (values: Record<SettingKey, string>): View => ({
+const FIELD_LABELS: Record<CheckoutField, string> = { name: '👤 نام', address: '📍 آدرس', phone: '📱 شماره موبایل' };
+
+/** Which details customers give at checkout; each one toggles on and off. */
+export const checkoutFieldsView = (fields: CheckoutField[]): View => ({
+  text: sections(
+    heading('🧾', 'اطلاعات ثبت سفارش'),
+    'مشتری هنگام خرید کدام اطلاعات را وارد کند؟',
+    quote(CHECKOUT_FIELDS.map((f) => `${fields.includes(f) ? '✅' : '⬜️'} ${FIELD_LABELS[f]}`).join('\n')),
+    hint('روی هر مورد بزنید تا روشن یا خاموش شود. اگر همه خاموش باشند، مشتری مستقیم به مرحله‌ی پرداخت می‌رود.'),
+  ),
+  keyboard: inline(
+    ...CHECKOUT_FIELDS.map((f) => [
+      button(`${fields.includes(f) ? '✅' : '⬜️'} ${FIELD_LABELS[f]}`, A.toggleCheckoutField(f), fields.includes(f) ? 'success' : undefined),
+    ]),
+    backRow(A.settings, '🔙 تنظیمات'),
+  ),
+});
+
+export const settingsMenu = (values: Record<SettingKey, string>, fields?: CheckoutField[]): View => ({
   text: sections(
     heading('⚙️', 'تنظیمات ربات'),
     quote(
@@ -165,7 +184,8 @@ export const settingsMenu = (values: Record<SettingKey, string>): View => ({
         `👋 ${e(truncate(values.welcome_text, 60))}\n` +
         `🧾 کد رهگیری: <code>${e(values.track_prefix)}XXXXX</code>\n` +
         `💳 ${e(truncate(values.bank_info, 40))}\n` +
-        `🗣️ ${e(truncate(values.support, 40))}`,
+        `🗣️ ${e(truncate(values.support, 40))}` +
+        (fields ? `\n🧾 هنگام خرید: ${fields.length ? fields.map((f) => FIELD_LABELS[f]).join('، ') : 'بدون پرسش'}` : ''),
     ),
     '👇 کدام بخش را ویرایش می‌کنید؟',
   ),
@@ -173,7 +193,7 @@ export const settingsMenu = (values: Record<SettingKey, string>): View => ({
     [button(SETTING_LABELS.shop_name.button, A.editSetting('shop_name')), button(SETTING_LABELS.welcome_text.button, A.editSetting('welcome_text'))],
     [button(SETTING_LABELS.bank_info.button, A.editSetting('bank_info')), button(SETTING_LABELS.support.button, A.editSetting('support'))],
     [button(SETTING_LABELS.help_text.button, A.editSetting('help_text')), button(SETTING_LABELS.track_prefix.button, A.editSetting('track_prefix'))],
-    [button('👮 ادمین‌ها', A.admins)],
+    [button('🧾 اطلاعات ثبت سفارش', A.checkoutFields), button('👮 ادمین‌ها', A.admins)],
     toAdminRoot(),
   ),
 });
@@ -427,10 +447,11 @@ const ACTION_BUTTONS: Record<AdminOrderAction, [string, ButtonStyle]> = {
 
 /** Order card with the receipt photo; `title` distinguishes a new-order alert from a lookup. */
 export const orderView = ({ order, details, lines }: FullOrder, title = heading('🧾', 'جزئیات سفارش')): View => {
+  const contact = details && contactLines({ name: `${details.first_name} ${details.last_name}`, address: details.address, phone: details.phone_number });
   const text = sections(
     `${title}\n<code>${order.track_id}</code>`,
     `🗓 ${formatPersianDate(order.time)}\n📌 وضعیت: <b>${STATUS_FA[order.status]}</b>`,
-    details && quote(`👤 ${e(details.first_name)} ${e(details.last_name)}\n📍 ${e(details.address)}\n📱 <code>${e(details.phone_number)}</code>`),
+    contact && quote(contact),
     itemsWithTotal(lines),
   );
   const actions = ALLOWED_ACTIONS[order.status].map((a) => button(ACTION_BUTTONS[a][0], A.orderAction(order.id, a), ACTION_BUTTONS[a][1]));
