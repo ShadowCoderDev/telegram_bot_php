@@ -177,14 +177,20 @@ describe('SaaS platform', () => {
     expect(buttons(root).find((b) => b.url)?.url).toBe('https://t.me/builder_bot?start=renew_2');
     expect(buttons(root).map((b) => b.url)).toContain('https://t.me/builder_bot?start=learn');
 
-    await shop.press(SELLER, 'a:cat:add');
-    await shop.text(SELLER, 'Seller category');
-    await shop.text(SELLER, '🧸');
+    // A new seller adds a product before any category: at the last step they name one, and nothing typed is lost.
+    await shop.press(SELLER, 'a:prod:add');
+    for (const t of ['Teddy', 'Soft bear', '250000', 'Toys Co', '5', '-']) await shop.text(SELLER, t);
+    expect(last(SHOP_TOKEN, SELLER)).toContain('اسم یک دسته‌بندی');
+    await shop.text(SELLER, '🧸 Seller category');
+    expect(last(SHOP_TOKEN, SELLER)).toContain('محصول اضافه شد');
+    expect(last(SHOP_TOKEN, SELLER)).toContain('Seller category');
     await shop.text(CUSTOMER, '/start');
     expect(byBot(SHOP_TOKEN, CUSTOMER).find((c) => String(c.params.text).includes('👋'))!.params.text).toContain('<b>Shop 555555</b>'); // the bot's name, not a placeholder
     await shop.press(CUSTOMER, 'shop');
     expect(last(SHOP_TOKEN, CUSTOMER)).not.toContain('فعلاً دسته‌بندی فعالی وجود ندارد');
     expect(buttons(byBot(SHOP_TOKEN, CUSTOMER).at(-1)).map((b) => b.text)).toContain('🧸 Seller category');
+    await shop.press(CUSTOMER, 'cat:1');
+    expect(JSON.stringify(byBot(SHOP_TOKEN, CUSTOMER).at(-1)!.params.reply_markup)).toContain('Teddy');
   });
 
   it('keeps shops apart even with forged buttons', async () => {
