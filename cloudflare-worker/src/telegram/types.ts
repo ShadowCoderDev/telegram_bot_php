@@ -38,10 +38,19 @@ export interface CallbackQuery {
   data?: string;
 }
 
+/** Someone typing "@bot something" in any chat. */
+export interface InlineQuery {
+  id: string;
+  from: User;
+  query: string;
+  offset: string;
+}
+
 export interface Update {
   update_id: number;
   message?: Message;
   callback_query?: CallbackQuery;
+  inline_query?: InlineQuery;
 }
 
 /** Button colour (Bot API 9.4+); older apps ignore it and show the default style. */

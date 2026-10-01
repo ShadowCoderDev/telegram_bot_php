@@ -23,6 +23,8 @@ export interface ShopRow {
   daily_limit: number | null;
   /** When the data of a lapsed shop was deleted (null = never). */
   purged_at: number | null;
+  /** Webhook registration generation (see HOOK_VERSION); older ones are re-registered. */
+  hook_version: number;
   created_at: number;
 }
 
@@ -87,6 +89,9 @@ export class ShopRepository extends GlobalRepository {
   /** Free days granted by the platform owner. */
   extend(id: number, seconds: number, now: number) {
     return this.run('UPDATE shops SET paid_until = MAX(paid_until, ?) + ?, reminder_stage = 0 WHERE id = ?', now, seconds, id);
+  }
+  setHookVersion(id: number, version: number) {
+    return this.run('UPDATE shops SET hook_version = ? WHERE id = ?', version, id);
   }
   setDailyLimit(id: number, limit: number | null) {
     return this.run('UPDATE shops SET daily_limit = ? WHERE id = ?', limit, id);
@@ -162,7 +167,8 @@ export class ShopRepository extends GlobalRepository {
 
 /** Every table with a shop's own rows, children before parents. */
 const PURGED_TABLES = [
-  'order_items', 'order_details', 'dialogs', 'sessions', 'orders', 'products', 'categories', 'faqs', 'users', 'settings', 'bot_usage', 'processed_updates',
+  'order_slots', 'order_items', 'order_details', 'dialogs', 'sessions', 'orders', 'products', 'category_schedules', 'categories', 'faqs', 'users', 'settings', 'bot_usage',
+  'processed_updates',
 ];
 
 export class SubscriptionPaymentRepository extends GlobalRepository {

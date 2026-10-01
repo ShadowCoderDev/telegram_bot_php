@@ -10,6 +10,7 @@ import {
   UserRepository,
 } from './db/repositories';
 import type { UserRow } from './db/models';
+import { ScheduleRepository } from './db/schedule';
 import { UsageRepository } from './db/usage';
 import { NO_LIMITS, capacitySettings, shopLimits, type Limits } from './capacity';
 import type { Env } from './env';
@@ -31,6 +32,7 @@ export function createDeps(env: Env, publicOrigin: string, shop: ShopContext) {
   const orders = new OrderRepository(env.DB, id);
   const products = new ProductRepository(env.DB, id);
   const settings = new SettingsRepository(env.DB, id);
+  const schedules = new ScheduleRepository(env.DB, id);
   const platformSettings = new SettingsRepository(env.DB, 0, PLATFORM_SETTING_DEFAULTS);
   // Admins: the seller who owns the shop, ADMIN_CHAT_IDS for the owner's own shop, plus /claim-ed ones.
   const fixedAdmins = [...(shop.owner_chat_id ? [shop.owner_chat_id] : []), ...(id === 1 ? parseAdminIds(env.ADMIN_CHAT_IDS) : [])];
@@ -60,7 +62,9 @@ export function createDeps(env: Env, publicOrigin: string, shop: ShopContext) {
       await Promise.all([...ids].map((chatId) => platformBot.sendMessage(chatId, text).catch((err) => console.error('platform alert', err))));
     },
     cart: new CartService(orders, products, settings),
-    orderService: new OrderService(orders),
+    /** Per-category order scheduling: schedules, closed days, booked slots. */
+    schedules,
+    orderService: new OrderService(orders, schedules),
     files: env.FILES ? new FileStore(env.FILES, tg, publicOrigin) : null,
     /** Admins that can't be removed from the bot (shop owner, ADMIN_CHAT_IDS); /claim-ed ones are added per update. */
     envAdminIds: fixedAdmins,

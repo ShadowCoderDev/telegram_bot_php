@@ -6,7 +6,10 @@ import type { View } from '../telegram/types';
 import { escapeHtml as e, money, truncate } from '../utils/format';
 import { formatPersianDate } from '../utils/persian';
 import { CB } from './callbacks';
+import { cartScheduleHint, productScheduleHint, slotLines } from './slots';
+import type { OrderSlotInfo, ScheduledCategory } from '../db/schedule';
 import type { CheckoutField } from '../services/checkoutFields';
+import type { Schedule } from '../services/schedule';
 import { CANCEL_HINT, HR, contactLines, expandable, fa, heading, hint, itemsWithTotal, progress, quote, sections, toman } from './common';
 
 const homeRow = (label = '🏠 منوی اصلی') => backRow(CB.home, label);
@@ -86,13 +89,15 @@ const stockLine = (inventory: number): string =>
       ? `🔥 فقط <b>${fa(inventory)}</b> عدد باقی مانده`
       : '✅ موجود در انبار';
 
-export const productCard = (p: Product, qty: number): View => {
+/** `schedule`: the product's category asks for a day and time when ordering. */
+export const productCard = (p: Product, qty: number, schedule: Pick<Schedule, 'label'> | null = null): View => {
   const head = sections(
     `📘 <b>${e(p.title)}</b>` + (p.author ? `\n✍️ ${hint(e(p.author))}` : ''),
     p.inventory > 0
       ? quote(`💰 قیمت واحد: <b>${toman(p.price)}</b>\n🔢 تعداد: <b>${fa(qty)}</b>\n💵 جمع: <b>${toman(p.price * qty)}</b>`)
       : quote(`💰 قیمت: <b>${toman(p.price)}</b>`),
     stockLine(p.inventory),
+    productScheduleHint(schedule),
   );
   const descTitle = '\n\n📝 <b>توضیحات</b>\n';
   let desc = e(p.description);
@@ -145,8 +150,8 @@ export const emptyCart = (): View => ({
   keyboard: inline([button('🛍️ خرید محصول', CB.shop, 'primary')], homeRow()),
 });
 
-export const cartView = (lines: OrderLine[]): View => ({
-  text: sections(heading('🛒', 'سبد خرید شما'), itemsWithTotal(lines, 'مبلغ قابل پرداخت'), hint('💡 قیمت‌ها هنگام تکمیل خرید نهایی می‌شوند.')),
+export const cartView = (lines: OrderLine[], scheduled: ScheduledCategory[] = []): View => ({
+  text: sections(heading('🛒', 'سبد خرید شما'), itemsWithTotal(lines, 'مبلغ قابل پرداخت'), cartScheduleHint(scheduled), hint('💡 قیمت‌ها هنگام تکمیل خرید نهایی می‌شوند.')),
   keyboard: inline(
     [button('💳 تکمیل خرید', CB.checkout, 'success')],
     ...lines.map((l) => [button(`🗑 حذف «${truncate(l.title, 25)}»`, CB.removeItem(l.item_id))]),
@@ -164,7 +169,7 @@ export const stockProblemsView = (problems: StockProblem[]): View => ({
   keyboard: inline([button('🛒 ویرایش سبد خرید', CB.cart, 'primary')]),
 });
 
-export const myOrdersView = (orders: Order[], lines: Map<number, OrderLine[]>): View => {
+export const myOrdersView = (orders: Order[], lines: Map<number, OrderLine[]>, slots: Map<number, OrderSlotInfo[]> = new Map()): View => {
   if (!orders.length) {
     return {
       text: sections(heading('📑', 'سفارشات شما'), 'هنوز سفارش ثبت‌شده‌ای ندارید.'),
@@ -174,6 +179,7 @@ export const myOrdersView = (orders: Order[], lines: Map<number, OrderLine[]>): 
   const blocks = orders.map((o) =>
     sections(
       `🧾 سفارش <code>${o.track_id}</code>\n🗓 ${formatPersianDate(o.time)}\n📌 وضعیت: <b>${STATUS_FA[o.status]}</b>`,
+      slotLines(slots.get(o.id) ?? []),
       itemsWithTotal(lines.get(o.id) ?? []),
     ),
   );
@@ -214,7 +220,7 @@ export const supportView = (support: string): View => ({
 /* ---------- checkout ---------- */
 
 /** Step `n` of `total` (the enabled checkout fields, then payment). */
-const stepView = (n: number, total: number, body: string, example?: string): View => ({
+export const stepView = (n: number, total: number, body: string, example?: string): View => ({
   text: sections(`${heading('🧾', 'تکمیل خرید')}\n${progress(n, total)}`, body, example && hint(`مثال: ${example}`), CANCEL_HINT),
 });
 
@@ -251,6 +257,9 @@ export const checkoutPrompts = {
       'زمان اعتبار مبلغ قبلی تمام شده یا سبد خرید تغییر کرده است. مبلغ جدید را ببینید و رسید <b>همین مبلغ</b> را بفرستید.',
     ),
   }),
+  slotsChanged: (): View => ({
+    text: sections(heading('📅', 'زمان رزرو شما به‌روز شد'), 'مهلت نگه‌داشتن زمان انتخابی تمام شده یا تغییر کرده است. زمان را دوباره بررسی می‌کنیم؛ سپس رسید را بفرستید.'),
+  }),
   tooLong: (max: number): View => ({ text: `⚠️ متن طولانی است؛ حداکثر ${fa(max)} کاراکتر بفرستید.` }),
   tooManyAwaiting: (max: number): View => ({
     text: sections(
@@ -275,7 +284,12 @@ export const checkoutPrompts = {
 
 export interface CheckoutData {
   orderId: number;
-  /** What this checkout asks for, fixed when it starts (older sessions: all three). */
+  /**
+   * What this checkout asks for, in order, fixed when it starts: "slot:<categoryId>" for each
+   * scheduled category, then the customer fields (name, address, phone).
+   * Older sessions have `fields` only, and before that all three.
+   */
+  steps?: string[];
   fields?: CheckoutField[];
   firstName?: string;
   lastName?: string;
@@ -287,10 +301,11 @@ export interface CheckoutData {
   lockedAt?: number;
 }
 
-export const receiptAccepted = (trackId: string, d: CheckoutData, lines: OrderLine[]): View => ({
+export const receiptAccepted = (trackId: string, d: CheckoutData, lines: OrderLine[], slots: OrderSlotInfo[] = []): View => ({
   text: sections(
     heading('🎉', 'سفارش شما ثبت شد!'),
     `🧾 کد رهگیری: <code>${trackId}</code>`,
+    slots.length > 0 && slotLines(slots),
     quote(
       [
         contactLines({ name: [d.firstName, d.lastName].filter(Boolean).join(' '), address: d.address, phone: d.phone }),

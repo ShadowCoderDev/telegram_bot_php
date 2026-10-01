@@ -18,6 +18,7 @@ const ADMIN = 11;
 const CUSTOMER = 22;
 const SELLER = 33;
 const CUSTOMER2 = 44;
+const CUSTOMER3 = 55;
 
 interface Row { group: string; label: string; cost: Cost }
 const rows: Row[] = [];
@@ -108,6 +109,35 @@ describe('capacity', () => {
     expect(typicalMix(), 'typical mix').toBeLessThanOrEqual(DEFAULT_WRITES_PER_UPDATE);
   });
 
+  it('measures order scheduling and inline mode', async () => {
+    h.sql("INSERT OR REPLACE INTO settings (shop_id, setting_key, setting_value) VALUES (1, 'scheduling_enabled', '1')");
+    h.sql("INSERT INTO category_schedules (shop_id, category_id, enabled, label, days, times, capacity, lead_minutes, horizon_days) VALUES (1, 1, 1, 'زمان نوبت', 127, '10:00,11:00,12:00', 1, 0, 7)");
+    const data = (prefix: string) =>
+      h.calls.filter((c) => c.params.chat_id === CUSTOMER3 && c.params.reply_markup?.inline_keyboard).at(-1)!.params.reply_markup.inline_keyboard.flat()
+        .map((b: { callback_data?: string }) => b.callback_data ?? '').filter((x: string) => x.startsWith(prefix));
+
+    // A returning customer with a cart (what the scheduling steps are measured on).
+    await h.post('/webhook', WEBHOOK_SECRET, msg(CUSTOMER3, '/start'));
+    await h.post('/webhook', WEBHOOK_SECRET, press(CUSTOMER3, 'add:1:1'));
+    await shop('schedule', 'checkout → days', press(CUSTOMER3, 'checkout'));
+    await shop('schedule', 'pick a day → times', press(CUSTOMER3, data('sd:1:')[1]!));
+    await shop('schedule', 'pick a time (reserves it)', press(CUSTOMER3, data('sl:1:')[0]!));
+    await shop('schedule', 'agenda (admin)', press(ADMIN, 'a:agenda'));
+
+    const inline = (query: string) => ({ inline_query: { id: `iq-${query}`, from: { id: CUSTOMER3, first_name: 'U' }, query, offset: '' } });
+    await shop('inline', 'inline query (empty)', inline(''));
+    await shop('inline', 'inline query (words)', inline('IELTS'));
+    await shop('inline', 'the same words again (kept for a moment)', inline('IELTS'));
+    h.sql("DELETE FROM category_schedules WHERE shop_id = 1");
+    h.sql("INSERT OR REPLACE INTO settings (shop_id, setting_key, setting_value) VALUES (1, 'scheduling_enabled', '0')");
+    await shop('schedule', 'cancel checkout', press(CUSTOMER3, 'co:cancel'));
+    report();
+
+    expect(total('schedule').w / total('schedule').n, 'schedule: rows written per update').toBeLessThanOrEqual(3.5);
+    // Inline mode only reads: a query writes nothing, however many people type.
+    for (const r of rows.filter((x) => x.group === 'inline')) expect(r.cost.written, r.label).toBe(0);
+  });
+
   it('keeps each step as cheap when the shop and the platform hold a lot of data', async () => {
     // This shop: 5,000 more customers with 20,000 orders. Another shop: 10,000 customers, 30,000 orders.
     await h.offline(() => {
@@ -178,11 +208,11 @@ const perUpdate = (group: string) => total(group).w / total(group).n;
 const typicalMix = () => 0.85 * perUpdate('browse') + 0.1 * perUpdate('purchase') + 0.05 * perUpdate('admin-order');
 
 function report() {
-  const groups = ['browse', 'purchase', 'admin-order', 'admin-setup', 'platform'];
+  const groups = ['browse', 'purchase', 'admin-order', 'admin-setup', 'platform', 'schedule', 'inline'];
   const lines = ['| group | step | rows written | rows read | queries |', '|---|---|---:|---:|---:|'];
   for (const r of rows) lines.push(`| ${r.group} | ${r.label || '↳'} | ${r.cost.written} | ${r.cost.read} | ${r.cost.queries} |`);
   lines.push('', '| flow | updates | rows written | per update | rows read |', '|---|---:|---:|---:|---:|');
-  for (const g of groups) {
+  for (const g of groups.filter((x) => rows.some((r) => r.group === x))) {
     const t = total(g);
     lines.push(`| ${g} | ${t.n} | ${t.w} | ${(t.w / t.n).toFixed(1)} | ${t.r} |`);
   }

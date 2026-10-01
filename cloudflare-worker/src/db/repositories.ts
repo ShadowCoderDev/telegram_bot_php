@@ -182,6 +182,23 @@ export class ProductRepository extends Repository {
   listPage(limit: number, offset: number) {
     return this.all<Product>('SELECT * FROM products WHERE shop_id = ?1 ORDER BY id DESC LIMIT ?2 OFFSET ?3', limit, offset);
   }
+  /**
+   * Products customers may see whose title or author contains `query` (all of them when it is
+   * empty), in-stock first. Arabic ي/ك and Persian ی/ک are the same letter to a person typing.
+   */
+  searchVisible(query: string, limit: number) {
+    const fold = (col: string) => `REPLACE(REPLACE(${col}, 'ي', 'ی'), 'ك', 'ک')`;
+    const term = query.trim().replace(/ي/g, 'ی').replace(/ك/g, 'ک');
+    return this.all<Product>(
+      `SELECT p.* FROM products p ${VISIBLE_JOIN}
+        WHERE p.shop_id = ?1 AND ${VISIBLE}
+          AND (?2 = '' OR ${fold('p.title')} LIKE ?3 ESCAPE '\\' OR ${fold('p.author')} LIKE ?3 ESCAPE '\\')
+        ORDER BY (p.inventory > 0) DESC, p.id DESC LIMIT ?4`,
+      term,
+      likeTerm(term),
+      limit,
+    );
+  }
   /** The category must belong to this shop; otherwise nothing is inserted and null is returned. */
   async create(p: ProductDraft): Promise<number | null> {
     const r = await this.run(
@@ -488,7 +505,7 @@ export type PlatformSettingKey = keyof typeof PLATFORM_SETTING_DEFAULTS;
 export const PLATFORM_SETTING_KEYS = Object.keys(PLATFORM_SETTING_DEFAULTS) as PlatformSettingKey[];
 
 /** Internal values the bot keeps for itself (not shown in the settings menu). */
-type InternalKey = 'admin_chat_ids' | 'webhook_marker' | 'bot_username' | 'capacity_alert' | 'stats_cache' | 'checkout_fields' | `tutorial_photo_${number}`;
+type InternalKey = 'admin_chat_ids' | 'webhook_marker' | 'bot_username' | 'capacity_alert' | 'stats_cache' | 'checkout_fields' | 'scheduling_enabled' | 'closed_days' | `tutorial_photo_${number}`;
 
 /** Per-shop key/value settings with defaults; the platform uses the same table under shop 0. */
 export class SettingsRepository<K extends string = SettingKey> extends Repository {

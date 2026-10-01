@@ -2,6 +2,7 @@ import { SHOP_MAX_SHARE, WARN_SHARE, capAlert } from './capacity';
 import { addDropped } from './db/usage';
 import type { Deps } from './deps';
 import { flooding, onceEvery } from './flood';
+import { handleInline } from './inline';
 import { registerAdminRoutes } from './handlers/admin';
 import { ADMIN_HOME } from './views/admin';
 import { registerUserRoutes } from './handlers/user';
@@ -20,7 +21,7 @@ export const CAPACITY_FULL_TEXT = '⏳ ظرفیت امروز این فروشگا
 export const ERROR_TEXT = '⚠️ مشکلی موقتی پیش آمد.\nلطفاً چند دقیقه‌ی دیگر دوباره امتحان کنید. 🙏';
 export const EXPIRED_ADMIN_TEXT = '🔒 اشتراک این فروشگاه تمام شده و فروشگاه بسته است.\nتا تمدید، فقط سفارش‌های ثبت‌شده را می‌توانید رسیدگی کنید.';
 export const SUSPENDED_ADMIN_TEXT = '⛔ این فروشگاه توسط پلتفرم متوقف شده است.\nبرای پیگیری با پشتیبانی پلتفرم تماس بگیرید.';
-const CLOSED_ADMIN_CALLBACKS = /^(a:root|a:orders(:\d+)?|a:order:.+|a:dialog:.+|a:cancel|noop)$/;
+const CLOSED_ADMIN_CALLBACKS = /^(a:root|a:orders(:\d+)?|a:order:.+|a:dialog:.+|a:agenda(:\d+)?|a:cancel|noop)$/;
 export const ADMIN_CAPACITY_FULL_TEXT = '⛔ مصرف امروز این فروشگاه به سقف رسیده و ربات تا ساعت ۳:۳۰ بامداد پاسخ نمی‌دهد.\nبرای افزایش سقف با پشتیبانی پلتفرم تماس بگیرید.';
 
 /** Builds the routers once per request from the wired dependencies. */
@@ -113,6 +114,8 @@ export function createBot(d: Deps) {
   }
 
   return async function (update: Update): Promise<void> {
+    // "@bot words" typed in some other chat: answered from the catalogue, no chat of ours involved.
+    if (update.inline_query) return handleInline(d, update.inline_query);
     d.adminIds = [...new Set([...d.envAdminIds, ...(await d.settings.claimedAdmins())])];
     const ctx = new BotContext(update, d.tg, d.adminIds);
     // Channel posts, edited messages, and anything in groups: the shop only works in private chats.

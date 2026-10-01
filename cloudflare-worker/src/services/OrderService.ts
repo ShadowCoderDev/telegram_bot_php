@@ -1,11 +1,14 @@
 import type { Order, OrderDetails, OrderLine } from '../db/models';
 import type { OrderRepository } from '../db/repositories';
+import type { OrderSlotInfo, ScheduleRepository } from '../db/schedule';
 import { planTransition, type AdminOrderAction } from './orderStatus';
 
 export interface FullOrder {
   order: Order;
   details: OrderDetails | null;
   lines: OrderLine[];
+  /** The day and time the customer picked, for categories that are scheduled. */
+  slots: OrderSlotInfo[];
 }
 
 export type ActionResult =
@@ -14,13 +17,16 @@ export type ActionResult =
   | { ok: false; reason: 'no_stock'; problems: OrderLine[] };
 
 export class OrderService {
-  constructor(private readonly orders: OrderRepository) {}
+  constructor(
+    private readonly orders: OrderRepository,
+    private readonly schedules: ScheduleRepository,
+  ) {}
 
   async load(orderId: number): Promise<FullOrder | null> {
     const order = await this.orders.find(orderId);
     if (!order) return null;
-    const [details, lines] = await Promise.all([this.orders.details(orderId), this.orders.lines(orderId)]);
-    return { order, details, lines };
+    const [details, lines, slots] = await Promise.all([this.orders.details(orderId), this.orders.lines(orderId), this.schedules.forOrder(orderId)]);
+    return { order, details, lines, slots };
   }
 
   async apply(orderId: number, action: AdminOrderAction): Promise<ActionResult> {

@@ -205,12 +205,31 @@ describe('SaaS platform', () => {
     expect(last(SHOP_TOKEN, CUSTOMER)).not.toContain('در دسترس نیست');
   });
 
+  it('registers a shop that predates inline mode again (keeping its waiting updates) the next time it gets an update', async () => {
+    const hooks = () => calls.filter((c) => c.token === SHOP_TOKEN && c.method === 'setWebhook');
+    expect(hooks().at(-1)!.params.allowed_updates).toContain('inline_query'); // created after inline mode existed
+    sql('UPDATE shops SET hook_version = 1 WHERE id = 2');
+    const before = hooks().length;
+    await shop.text(CUSTOMER, '/start');
+    expect(hooks()).toHaveLength(before + 1);
+    expect(hooks().at(-1)!.params).toMatchObject({ url: `http://127.0.0.1:${PORT}/webhook/2`, secret_token: shopSecret(), drop_pending_updates: false });
+    expect(hooks().at(-1)!.params.allowed_updates).toContain('inline_query');
+    expect(await sqlValue('SELECT hook_version FROM shops WHERE id = 2')).toBe(2);
+    await shop.text(CUSTOMER, '/start');
+    expect(hooks()).toHaveLength(before + 1); // once
+  });
+
   it('closes the shop after expiry and grace: no products or orders for customers, only paid orders for its admin', async () => {
     sql(`UPDATE shops SET paid_until = ${now() - 4 * 86400} WHERE id = 2`);
     await shop.text(CUSTOMER, '/start');
     expect(last(SHOP_TOKEN, CUSTOMER)).toContain('موقتاً در دسترس نیست');
     await shop.press(CUSTOMER, 'shop');
     expect(calls.at(-1)).toMatchObject({ method: 'answerCallbackQuery', params: { show_alert: true } });
+    // Inline mode shows nothing of a closed shop either.
+    await post('/webhook/2', shopSecret(), { inline_query: { id: 'iq-closed', from: { id: CUSTOMER, first_name: 'U' }, query: '', offset: '' } });
+    const inline = calls.filter((c) => c.token === SHOP_TOKEN && c.method === 'answerInlineQuery').at(-1)!;
+    expect(inline.params.results).toHaveLength(1);
+    expect(inline.params.results[0].title).toContain('موقتاً در دسترس نیست');
 
     await shop.text(SELLER, '/start');
     const panel = byBot(SHOP_TOKEN, SELLER).at(-2)!;

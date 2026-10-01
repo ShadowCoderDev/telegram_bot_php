@@ -9,6 +9,9 @@ import type { View } from '../telegram/types';
 import { escapeHtml as e, money } from '../utils/format';
 import { parseAmount, tehranDayAndMonthStart } from '../utils/persian';
 import * as v from '../views/admin';
+import { slotLines } from '../views/slots';
+import type { FullOrder } from '../services/OrderService';
+import { SCHEDULE_FLOW, registerScheduleRoutes, scheduleFlowStep } from './schedule';
 import { CB } from '../views/callbacks';
 import { fa, heading, hint, progress, quote, sections } from '../views/common';
 import { LIMITS, charCount, planLimits } from '../limits';
@@ -28,6 +31,8 @@ const FLOW = {
   edit: 'edit_product',
   dialog: 'dialog',
   findCustomer: 'find_customer',
+  schedTimes: SCHEDULE_FLOW.times,
+  schedLabel: SCHEDULE_FLOW.label,
 } as const;
 const ADMIN_FLOWS: readonly string[] = Object.values(FLOW);
 
@@ -45,14 +50,15 @@ const FAQ_STEP = (n: number, body: string) => v.formStep('افزودن سوال 
 export function registerAdminRoutes(router: Router, d: Deps): Router {
   const showAdmins = async (ctx: BotContext) => ctx.render(v.adminsPage(d.envAdminIds, await d.settings.claimedAdmins(), ctx.chatId));
   const rootView = async () => {
-    const [awaiting, subscription, today, limits] = await Promise.all([
+    const [awaiting, subscription, today, limits, scheduling] = await Promise.all([
       d.orders.countAllAwaitingReview(),
       subscriptionInfo(d),
       d.usage.today(Math.floor(Date.now() / 1000)),
       d.limits(false),
+      d.schedules.isEnabled(),
     ]);
     if (subscription && (subscription.access === 'expired' || subscription.access === 'suspended')) return v.closedAdminRoot(awaiting, subscription);
-    return v.adminRoot(awaiting, subscription, { updates: today.updates, cap: limits.updates });
+    return v.adminRoot(awaiting, subscription, { updates: today.updates, cap: limits.updates }, scheduling);
   };
   const showRoot = async (ctx: BotContext) => ctx.render(await rootView());
   const showFaqs = async (ctx: BotContext) => ctx.render(v.faqsManage(await d.faqs.list(false)));
@@ -118,6 +124,8 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
     await d.sessions.set(ctx.chatId, flow, step, data);
     await ctx.reply(typeof message === 'string' ? v.prompt(message) : message);
   };
+
+  registerScheduleRoutes(router, d);
 
   return (
     router
@@ -211,6 +219,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
       .callback(/^a:cat:delok:(\d+)$/, async (ctx, [id]) => {
         // Checked again inside the DELETE, in case a product was moved in meanwhile.
         const deleted = await d.categories.deleteIfEmpty(Number(id));
+        if (deleted) await d.schedules.remove(Number(id));
         await ctx.reply({ text: deleted ? '✅ دسته‌بندی حذف شد.' : '🚫 این دسته‌بندی محصول دارد و حذف نشد.' });
         await showCategories(ctx);
       })
@@ -255,7 +264,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
         const result = await d.orderService.apply(Number(id), action as AdminOrderAction);
         if (result.ok) {
           await ctx.render(v.orderView(result.order));
-          await notifyBuyer(ctx, result.order.order.user_chat_id, result.order.order.track_id, action as AdminOrderAction);
+          await notifyBuyer(ctx, result.order, action as AdminOrderAction);
           return;
         }
         if (result.reason === 'already_changed') {
@@ -325,8 +334,10 @@ const STATUS_MESSAGES: Record<AdminOrderAction, string> = {
   send: '📤 سفارش شما با کد رهگیری <b>{t}</b> ارسال شد.',
 };
 
-function notifyBuyer(ctx: BotContext, buyerChatId: number, trackId: string, action: AdminOrderAction) {
-  return ctx.sendTo(buyerChatId, { text: STATUS_MESSAGES[action].replace('{t}', trackId) }).catch((err) => console.error('notify buyer', err));
+function notifyBuyer(ctx: BotContext, { order, slots }: FullOrder, action: AdminOrderAction) {
+  // A scheduled order's day and time ride along (not on a rejection: that frees the slot).
+  const text = sections(STATUS_MESSAGES[action].replace('{t}', order.track_id), action !== 'reject' && slots.length > 0 && slotLines(slots));
+  return ctx.sendTo(order.user_chat_id, { text }).catch((err) => console.error('notify buyer', err));
 }
 
 async function closeDialogFor(adminChatId: number, d: Deps) {
@@ -381,6 +392,10 @@ async function adminFlowStep(ctx: BotContext, s: Session<Data>, d: Deps): Promis
       await d.sessions.clear(ctx.chatId);
       return ctx.reply(v.customerSearchResults(text, await d.users.searchCustomers(text)));
     }
+
+    case FLOW.schedTimes:
+    case FLOW.schedLabel:
+      return scheduleFlowStep(ctx, s, d);
 
     case FLOW.setting: {
       if (!text) return needText();

@@ -19,6 +19,14 @@ interface ApiResponse<T> {
 
 type Params = Record<string, unknown>;
 
+/** The update types the shops' webhooks ask Telegram for. */
+export const ALLOWED_UPDATES = ['message', 'callback_query', 'inline_query'];
+/**
+ * Which generation of webhook registration a bot has: 1 = messages and buttons, 2 = + inline mode.
+ * Bots registered with an older one are registered again when they next receive an update.
+ */
+export const HOOK_VERSION = 2;
+
 /** A Bot API call that hangs is abandoned after this long, instead of holding the update open. */
 const TIMEOUT_MS = 10_000;
 
@@ -91,12 +99,24 @@ export class TelegramClient {
     return this.call('answerCallbackQuery', { callback_query_id: id, text, show_alert: showAlert });
   }
 
-  setWebhook(url: string, secretToken: string) {
+  /** `dropPending: false` re-registers a bot that is in use without losing the updates waiting for it. */
+  setWebhook(url: string, secretToken: string, dropPending = true) {
     return this.call('setWebhook', {
       url,
       secret_token: secretToken,
-      allowed_updates: ['message', 'callback_query'],
-      drop_pending_updates: true,
+      allowed_updates: ALLOWED_UPDATES,
+      drop_pending_updates: dropPending,
+    });
+  }
+
+  /** Answers an inline query. Results are cached by Telegram for `cacheTime` seconds, shared between users. */
+  answerInlineQuery(id: string, results: unknown[], extra: { cacheTime?: number; button?: { text: string; start_parameter: string } } = {}) {
+    return this.call('answerInlineQuery', {
+      inline_query_id: id,
+      results,
+      cache_time: extra.cacheTime ?? 60,
+      is_personal: false,
+      button: extra.button,
     });
   }
 
