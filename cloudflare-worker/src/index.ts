@@ -7,9 +7,10 @@ import type { Env } from './env';
 import { checkCapacity, createPlatformBot, createPlatformDeps, purgeLapsedShops, sendReminders } from './platform';
 import { FileStore } from './services/FileStore';
 import { statusPage } from './setup';
-import { TelegramClient } from './telegram/TelegramClient';
+import { HOOK_VERSION, TelegramClient } from './telegram/TelegramClient';
+import { ShopRepository } from './db/platform';
 import type { Update } from './telegram/types';
-import { OWNER_SHOP_ID, platformWebhookSecret, resolveShop } from './tenancy';
+import { OWNER_SHOP_ID, platformWebhookSecret, resolveShop, type ShopContext } from './tenancy';
 import { sameSecret } from './crypto';
 
 /**
@@ -37,7 +38,9 @@ export default {
       await ensureSchema(env.DB);
       const shop = await resolveShop(env, Number(shopRoute[1] ?? OWNER_SHOP_ID), secret);
       if (!shop) return new Response('Forbidden', { status: 403 });
-      return handle(request, usage, shop.id, (update) => createBot(createDeps(env, url.origin, shop))(update));
+      const response = await handle(request, usage, shop.id, (update) => createBot(createDeps(env, url.origin, shop))(update));
+      await upgradeWebhook(env, shop, url.origin);
+      return response;
     }
 
     if (request.method === 'POST' && url.pathname === '/platform') {
@@ -74,6 +77,27 @@ export default {
     }
   },
 } satisfies ExportedHandler<Env>;
+
+/** Shops whose re-registration failed lately, so a bad token isn't retried on every update. */
+const upgradeFailed = new Map<number, number>();
+const UPGRADE_RETRY_MS = 10 * 60_000;
+
+/**
+ * A seller's bot registered before a newer update type existed (inline mode) is registered again,
+ * the first time it receives an update after the deploy. Updates already waiting are kept.
+ */
+async function upgradeWebhook(env: Env, shop: ShopContext, origin: string): Promise<void> {
+  if (shop.id === OWNER_SHOP_ID || shop.hook_version >= HOOK_VERSION) return; // the owner's shop is registered by the status page
+  if (Date.now() - (upgradeFailed.get(shop.id) ?? 0) < UPGRADE_RETRY_MS) return;
+  try {
+    await new TelegramClient(shop.token, env.TELEGRAM_API_BASE).setWebhook(`${origin}/webhook/${shop.id}`, shop.webhook_secret, false);
+    await new ShopRepository(env.DB).setHookVersion(shop.id, HOOK_VERSION);
+    shop.hook_version = HOOK_VERSION;
+  } catch (err) {
+    upgradeFailed.set(shop.id, Date.now());
+    console.error('webhook upgrade failed', shop.id, err);
+  }
+}
 
 /**
  * Runs a bot on one update and always ACKs: a non-2xx makes Telegram redeliver it in a loop.

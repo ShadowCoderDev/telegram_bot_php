@@ -3,7 +3,7 @@ import { ShopRepository } from './db/platform';
 import { PLATFORM_SETTING_DEFAULTS, SettingsRepository } from './db/repositories';
 import { parseAdminIds } from './deps';
 import type { Env } from './env';
-import { TelegramClient } from './telegram/TelegramClient';
+import { HOOK_VERSION, TelegramClient } from './telegram/TelegramClient';
 import { OWNER_SHOP_ID, platformWebhookSecret } from './tenancy';
 import { escapeHtml as e } from './utils/format';
 
@@ -20,7 +20,7 @@ interface BotStatus {
  */
 async function ensureWebhook(tg: TelegramClient, settings: SettingsRepository<string>, url: string, secret: string): Promise<string | undefined> {
   const me = await tg.call<{ username?: string }>('getMe');
-  const marker = await derivedSecret(secret, url);
+  const marker = await derivedSecret(secret, `${url}#${HOOK_VERSION}`); // a new generation re-registers the webhook
   if ((await settings.raw('webhook_marker')) !== marker) {
     await tg.setWebhook(url, secret);
     await settings.set('webhook_marker', marker);

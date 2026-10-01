@@ -11,11 +11,15 @@ export const UNCAPPED = 1e12;
 const RECENT_CHARS = 480;
 /** A capped shop is refused without writing; its counters are still flushed once per this many refusals. */
 const DROPPED_FLUSH = 50;
+/** Inline queries are written to the usage row in batches of this size. */
+const INLINE_FLUSH = 50;
 
 interface Pending {
   written: number;
   read: number;
   dropped: number;
+  /** Inline-mode queries (read-only; Worker requests that aren't updates). */
+  inline: number;
 }
 
 /*
@@ -26,21 +30,24 @@ interface Pending {
 const pending = new Map<number, Pending>();
 
 function take(shopId: number): Pending {
-  const p = pending.get(shopId) ?? { written: 0, read: 0, dropped: 0 };
+  const p = pending.get(shopId) ?? { written: 0, read: 0, dropped: 0, inline: 0 };
   pending.delete(shopId);
   return p;
 }
 
 function give(shopId: number, p: Pending) {
   const cur = pending.get(shopId);
-  pending.set(shopId, cur ? { written: cur.written + p.written, read: cur.read + p.read, dropped: cur.dropped + p.dropped } : p);
+  pending.set(shopId, cur ? { written: cur.written + p.written, read: cur.read + p.read, dropped: cur.dropped + p.dropped, inline: cur.inline + p.inline } : p);
 }
 
 /** Adds a finished request's D1 cost to its bot's usage (stored with the bot's next update). */
-export const addPendingUsage = (shopId: number, usage: D1Usage) => give(shopId, { written: usage.rowsWritten, read: usage.rowsRead, dropped: 0 });
+export const addPendingUsage = (shopId: number, usage: D1Usage) => give(shopId, { written: usage.rowsWritten, read: usage.rowsRead, dropped: 0, inline: 0 });
 
 /** Counts a refused request (flood): Cloudflare still bills it as a Worker request. */
-export const addDropped = (shopId: number) => give(shopId, { written: 0, read: 0, dropped: 1 });
+export const addDropped = (shopId: number) => give(shopId, { written: 0, read: 0, dropped: 1, inline: 0 });
+
+/** Counts an inline-mode query: a Worker request, but no update (so no write and no daily-cap use). */
+export const addInline = (shopId: number) => give(shopId, { written: 0, read: 0, dropped: 0, inline: 1 });
 
 /** What a bot may do today (see src/capacity.ts). */
 export interface TrackLimits {
@@ -58,11 +65,12 @@ export type TrackResult =
 export interface DayUsage {
   updates: number;
   dropped: number;
+  inline: number;
   rows_written: number;
   rows_read: number;
 }
 
-const NO_USAGE: DayUsage = { updates: 0, dropped: 0, rows_written: 0, rows_read: 0 };
+const NO_USAGE: DayUsage = { updates: 0, dropped: 0, inline: 0, rows_written: 0, rows_read: 0 };
 
 /** Update ids go into the "recent" list as text: D1 binds JS numbers as REAL ("123.0"). */
 const idText = (updateId: number) => String(Math.trunc(updateId));
@@ -81,13 +89,14 @@ export class UsageRepository extends Repository {
     let row: { updates: number } | null;
     try {
       row = await this.first<{ updates: number }>(
-        `INSERT INTO bot_usage (shop_id, recent, last_at, day, updates, dropped, rows_written, rows_read)
-         VALUES (?1, ',' || ?2 || ',', ?3, ?4, 1, ?5, ?6, ?7)
+        `INSERT INTO bot_usage (shop_id, recent, last_at, day, updates, dropped, rows_written, rows_read, inline)
+         VALUES (?1, ',' || ?2 || ',', ?3, ?4, 1, ?5, ?6, ?7, ?12)
          ON CONFLICT (shop_id) DO UPDATE SET
            recent       = substr(',' || ?2 || ',' || substr(bot_usage.recent, 2), 1, ?9),
            last_at      = excluded.last_at,
            updates      = CASE WHEN bot_usage.day = excluded.day THEN bot_usage.updates + 1 ELSE 1 END,
            dropped      = CASE WHEN bot_usage.day = excluded.day THEN bot_usage.dropped ELSE 0 END + excluded.dropped,
+           inline       = CASE WHEN bot_usage.day = excluded.day THEN bot_usage.inline ELSE 0 END + excluded.inline,
            rows_written = CASE WHEN bot_usage.day = excluded.day THEN bot_usage.rows_written ELSE 0 END + excluded.rows_written,
            rows_read    = CASE WHEN bot_usage.day = excluded.day THEN bot_usage.rows_read ELSE 0 END + excluded.rows_read,
            day          = excluded.day
@@ -95,7 +104,7 @@ export class UsageRepository extends Repository {
            AND (bot_usage.day != excluded.day
                 OR (bot_usage.updates < ?8 AND bot_usage.rows_written < ?10 AND bot_usage.rows_read < ?11))
          RETURNING updates`,
-        idText(updateId), now, day, carried.dropped, carried.written, carried.read, limits.updates, RECENT_CHARS, limits.written, limits.read,
+        idText(updateId), now, day, carried.dropped, carried.written, carried.read, limits.updates, RECENT_CHARS, limits.written, limits.read, carried.inline,
       );
     } catch (err) {
       give(this.shopId, carried);
@@ -127,8 +136,24 @@ export class UsageRepository extends Repository {
 
   /** This bot's counters for today (zeros before its first update of the day). */
   async today(now: number): Promise<DayUsage> {
-    const row = await this.first<DayUsage & { day: number }>('SELECT day, updates, dropped, rows_written, rows_read FROM bot_usage WHERE shop_id = ?1');
+    const row = await this.first<DayUsage & { day: number }>('SELECT day, updates, dropped, inline, rows_written, rows_read FROM bot_usage WHERE shop_id = ?1');
     return row && row.day === utcDay(now) ? row : { ...NO_USAGE };
+  }
+
+  /**
+   * Writes the counted inline queries (and the cost pending with them) once enough have piled up:
+   * one write per INLINE_FLUSH queries instead of one per query. Nothing is lost when the bot has
+   * no row for today yet: the numbers wait for its next update.
+   */
+  async flushInline(now: number): Promise<void> {
+    const waiting = pending.get(this.shopId);
+    if (!waiting || waiting.inline < INLINE_FLUSH) return;
+    const p = take(this.shopId);
+    const r = await this.run(
+      'UPDATE bot_usage SET inline = inline + ?2, dropped = dropped + ?3, rows_written = rows_written + ?4, rows_read = rows_read + ?5 WHERE shop_id = ?1 AND day = ?6',
+      p.inline, p.dropped, p.written, p.read, utcDay(now),
+    ).catch(() => null);
+    if (!r || r.meta.changes === 0) give(this.shopId, p);
   }
 }
 
@@ -145,7 +170,7 @@ export class PlatformUsageRepository {
   async totals(day: number): Promise<DayUsage & { shops: number }> {
     const r = await this.db
       .prepare(
-        `SELECT COALESCE(SUM(updates), 0) AS updates, COALESCE(SUM(dropped), 0) AS dropped,
+        `SELECT COALESCE(SUM(updates), 0) AS updates, COALESCE(SUM(dropped), 0) AS dropped, COALESCE(SUM(inline), 0) AS inline,
                 COALESCE(SUM(rows_written), 0) AS rows_written, COALESCE(SUM(rows_read), 0) AS rows_read,
                 COUNT(CASE WHEN shop_id != 0 AND updates > 0 THEN 1 END) AS shops
            FROM bot_usage WHERE day = ?`,
@@ -165,7 +190,7 @@ export class PlatformUsageRepository {
   top(day: number, limit = 5): Promise<ShopDayUsage[]> {
     return this.db
       .prepare(
-        `SELECT u.shop_id, u.updates, u.dropped, u.rows_written, u.rows_read, s.bot_username
+        `SELECT u.shop_id, u.updates, u.dropped, u.inline, u.rows_written, u.rows_read, s.bot_username
            FROM bot_usage u LEFT JOIN shops s ON s.id = u.shop_id
           WHERE u.day = ? ORDER BY u.rows_written DESC, u.updates DESC LIMIT ?`,
       )
@@ -178,11 +203,11 @@ export class PlatformUsageRepository {
   history(day: number, days = 7): Promise<(DayUsage & { day: number; shops: number })[]> {
     return this.db
       .prepare(
-        `SELECT day, SUM(updates) AS updates, SUM(dropped) AS dropped, SUM(rows_written) AS rows_written, SUM(rows_read) AS rows_read,
+        `SELECT day, SUM(updates) AS updates, SUM(dropped) AS dropped, SUM(inline) AS inline, SUM(rows_written) AS rows_written, SUM(rows_read) AS rows_read,
                 COUNT(CASE WHEN shop_id != 0 AND updates > 0 THEN 1 END) AS shops
-           FROM (SELECT day, shop_id, updates, dropped, rows_written, rows_read FROM usage_history WHERE day >= ?1 - ?2 AND day < ?1
+           FROM (SELECT day, shop_id, updates, dropped, inline, rows_written, rows_read FROM usage_history WHERE day >= ?1 - ?2 AND day < ?1
                  UNION ALL
-                 SELECT day, shop_id, updates, dropped, rows_written, rows_read FROM bot_usage WHERE day >= ?1 - ?2 AND day < ?1)
+                 SELECT day, shop_id, updates, dropped, inline, rows_written, rows_read FROM bot_usage WHERE day >= ?1 - ?2 AND day < ?1)
           GROUP BY day ORDER BY day DESC`,
       )
       .bind(day, days)

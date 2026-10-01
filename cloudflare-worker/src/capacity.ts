@@ -187,8 +187,8 @@ export interface CapacityReport extends QuotaUsage {
 }
 
 const share = (used: number, quota: number): Share => ({ used, quota, share: quota > 0 ? used / quota : 0 });
-/** Worker requests: handled updates plus refused ones (flood, cap, redelivery). */
-const requestsOf = (u: DayUsage) => u.updates + u.dropped;
+/** Worker requests: handled updates, refused ones (flood, cap, redelivery) and inline-mode queries. */
+const requestsOf = (u: DayUsage) => u.updates + u.dropped + u.inline;
 
 export async function quotaUsage(db: D1Database, c: CapacitySettings, now: number): Promise<QuotaUsage> {
   const usage = new PlatformUsageRepository(db);

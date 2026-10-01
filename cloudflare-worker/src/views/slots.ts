@@ -1,0 +1,20 @@
+/** Small pieces about a scheduled order, shared by the customer's and the seller's screens. */
+import type { OrderSlotInfo, ScheduledCategory } from '../db/schedule';
+import type { Schedule } from '../services/schedule';
+import { formatSlot } from '../services/schedule';
+import { escapeHtml as e } from '../utils/format';
+
+/** "📅 زمان نوبت: شنبه ۱۴۰۵/۰۷/۱۰ · ساعت ۱۶:۳۰" – one line per scheduled category of the order. */
+export const slotLines = (slots: OrderSlotInfo[]): string =>
+  slots
+    .map((s) => `📅 ${e(s.label)}${slots.length > 1 && s.category_name ? ` (${e(`${s.category_icon} ${s.category_name}`.trim())})` : ''}: <b>${formatSlot(s.slot_at)}</b>`)
+    .join('\n');
+
+/** On the cart: tells the customer a time will be asked for, before they start. */
+export const cartScheduleHint = (required: ScheduledCategory[]): string =>
+  required.length
+    ? `📅 ${required.length > 1 ? 'این سفارش چند زمان می‌خواهد' : `این سفارش <b>${e(required[0]!.label)}</b> می‌خواهد`}؛ هنگام «تکمیل خرید» انتخابش می‌کنید.`
+    : '';
+
+/** On a product card: a time is part of buying this product. */
+export const productScheduleHint = (s: Pick<Schedule, 'label'> | null): string => (s ? `📅 این محصول با انتخاب <b>${e(s.label)}</b> سفارش داده می‌شود.` : '');

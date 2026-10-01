@@ -404,6 +404,44 @@ describe('shop bot end-to-end', () => {
     expect(answered).toBeLessThan(130);
   });
 
+  it('answers inline queries ("@bot words" in any chat) with shareable product cards', async () => {
+    sql('UPDATE products SET inventory = 5 WHERE id = 1');
+    sql("INSERT OR REPLACE INTO settings (shop_id, setting_key, setting_value) VALUES (1, 'bot_username', 'ielts_shop_bot')");
+    const ask = async (query: string) => {
+      await post({ inline_query: { id: `iq${++messageId}`, from: { id: SHOPPER, first_name: 'U' }, query, offset: '' } });
+      return calls.filter((c) => c.method === 'answerInlineQuery').at(-1)!.params;
+    };
+
+    const all = await ask('');
+    expect(all.is_personal).toBe(false);
+    expect(all.button).toEqual({ text: '🛍 باز کردن فروشگاه', start_parameter: 'shop' });
+    expect(all.results).toHaveLength(1);
+    const card = all.results[0];
+    expect(card).toMatchObject({ type: 'photo', id: 'p1', photo_file_id: 'PRODUCT_PHOTO', parse_mode: 'HTML' });
+    expect(card.caption).toContain('IELTS &lt;Book&gt;'); // escaped
+    expect(card.caption).toMatch(/💰 <b>[\d,]+ تومان<\/b>/);
+    expect(card.reply_markup.inline_keyboard[0][0]).toMatchObject({ url: 'https://t.me/ielts_shop_bot?start=p_1' });
+
+    expect((await ask('ielts')).results).toHaveLength(1); // case-insensitive, matches the title
+    expect((await ask('author')).results).toHaveLength(1); // ... and the author
+    expect((await ask('nothing like this')).results).toEqual([]);
+    expect((await ask('50%')).results).toEqual([]); // LIKE wildcards are plain characters
+
+    // (Answers are kept for a few seconds per query, so each check below uses new words.)
+    await press(ADMIN, 'a:prod:toggle:1');
+    expect((await ask('iel')).results).toEqual([]); // a hidden product is not offered
+    await press(ADMIN, 'a:prod:toggle:1');
+    expect((await ask('ielt')).results).toHaveLength(1);
+
+    // The card's button opens the product in the shop; the "open the shop" button opens the menu.
+    await text(SHOPPER, '/start p_1');
+    expect(sent(SHOPPER).filter((c) => c.method === 'sendPhoto').at(-1)!.params.photo).toBe('PRODUCT_PHOTO');
+    await text(SHOPPER, '/start shop');
+    expect(sent(SHOPPER).some((c) => String(c.params.text).includes('یکی از گزینه‌های زیر را انتخاب کنید'))).toBe(true);
+    await text(SHOPPER, '/start p_999');
+    expect(lastText(SHOPPER)).toContain('این محصول پیدا نشد');
+  });
+
   it('asks at checkout only for what the seller chose in the settings', async () => {
     sql('UPDATE products SET inventory = 50 WHERE id = 1');
     await press(ADMIN, 'a:cof');

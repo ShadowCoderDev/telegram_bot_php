@@ -8,8 +8,9 @@ import { getPlatformProxy } from 'wrangler';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { emptyUsage, meterD1 } from '../src/db/meter';
 import { ShopRepository } from '../src/db/platform';
+import { ScheduleRepository } from '../src/db/schedule';
 import { CategoryRepository, FaqRepository, OrderRepository, ProductRepository, SessionRepository, SettingsRepository, UserRepository } from '../src/db/repositories';
-import { PlatformUsageRepository, UNCAPPED, UsageRepository, addPendingUsage, utcDay } from '../src/db/usage';
+import { PlatformUsageRepository, UNCAPPED, UsageRepository, addInline, addPendingUsage, utcDay } from '../src/db/usage';
 
 const PERSIST = '.wrangler/repo-test';
 let proxy: Awaited<ReturnType<typeof getPlatformProxy<{ DB: D1Database }>>>;
@@ -178,6 +179,25 @@ describe('usage tracking (redeliveries, daily cap)', () => {
     expect((await bot.track(4, T + DAY, budget)).status).toBe('ok'); // a new day
   });
 
+  it('counts inline queries in batches, and keeps them for later when the bot has no row for today', async () => {
+    const bot = new UsageRepository(db, 12);
+    await bot.track(1, T, OPEN);
+    for (let i = 0; i < 49; i++) addInline(12);
+    await bot.flushInline(T);
+    expect((await bot.today(T)).inline).toBe(0); // below a batch: nothing written
+    addInline(12);
+    await bot.flushInline(T);
+    expect((await bot.today(T)).inline).toBe(50);
+
+    const late = new UsageRepository(db, 13);
+    for (let i = 0; i < 50; i++) addInline(13);
+    await late.flushInline(T); // no row for this bot yet
+    expect((await late.today(T)).inline).toBe(0);
+    await late.track(1, T, OPEN); // its first update takes them along
+    expect((await late.today(T)).inline).toBe(50);
+    expect((await new PlatformUsageRepository(db).totals(utcDay(T))).inline).toBeGreaterThanOrEqual(100);
+  });
+
   it("adds each request's measured cost with the bot's next update", async () => {
     const bot = new UsageRepository(db, 10);
     await bot.track(1, T, OPEN);
@@ -187,6 +207,83 @@ describe('usage tracking (redeliveries, daily cap)', () => {
     expect(await bot.today(T)).toMatchObject({ updates: 2, rows_written: 7, rows_read: 42 });
     const totals = await new PlatformUsageRepository(db).totals(utcDay(T));
     expect(totals.rows_written).toBeGreaterThanOrEqual(7);
+  });
+});
+
+describe('booking a time slot', () => {
+  const NOW = 1_900_000_000;
+  const HOUR = 3600;
+  let schedules: ScheduleRepository;
+  let n = 0;
+  const slot = () => NOW + 86_400 + ++n * 1800; // a fresh slot for each test
+  const setStatus = (id: number, status: string) => db.prepare('UPDATE orders SET status = ? WHERE id = ?').bind(status, id).run();
+
+  beforeAll(() => {
+    schedules = new ScheduleRepository(db, 1);
+  });
+
+  it('gives the last place to only one of two orders racing for it', async () => {
+    const [a, b, at] = [await seedOrder('pending'), await seedOrder('pending'), slot()];
+    const results = await Promise.all([schedules.reserve(a, 1, at, 1, NOW, HOUR), schedules.reserve(b, 1, at, 1, NOW, HOUR)]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect([...(await schedules.taken(1, at, at + 1, NOW)).values()]).toEqual([1]);
+  });
+
+  it('counts a hold only while it lasts, and a paid order for good', async () => {
+    const [holder, waiting, buyer, at] = [await seedOrder('pending'), await seedOrder('pending'), await seedOrder('pending'), slot()];
+    expect(await schedules.reserve(holder, 1, at, 1, NOW, HOUR)).toBe(true);
+    expect(await schedules.reserve(waiting, 1, at, 1, NOW + 10, HOUR)).toBe(false); // held
+    expect(await schedules.reserve(waiting, 1, at, 1, NOW + HOUR + 1, HOUR)).toBe(true); // the hold ran out
+    expect(await db.prepare('SELECT count(*) AS n FROM order_slots WHERE order_id = ?').bind(holder).first()).toEqual({ n: 0 }); // forgotten
+
+    await setStatus(waiting, 'payed');
+    expect(await schedules.reserve(buyer, 1, at, 1, NOW + 10 * HOUR, HOUR)).toBe(false); // paid: taken for good
+    await setStatus(waiting, 'rejected');
+    expect(await schedules.reserve(buyer, 1, at, 1, NOW + 10 * HOUR, HOUR)).toBe(true); // rejected: given back
+  });
+
+  it('lets an order choose again, respects capacity and no capacity, and only serves pending orders', async () => {
+    const [a, b, c, done, at] = [await seedOrder('pending'), await seedOrder('pending'), await seedOrder('pending'), await seedOrder('approved'), slot()];
+    expect(await schedules.reserve(a, 1, at, 2, NOW, HOUR)).toBe(true);
+    expect(await schedules.reserve(a, 1, at, 2, NOW, HOUR)).toBe(true); // the same order again: not counted twice
+    expect(await schedules.reserve(b, 1, at, 2, NOW, HOUR)).toBe(true);
+    expect(await schedules.reserve(c, 1, at, 2, NOW, HOUR)).toBe(false); // two places, both held
+    expect(await schedules.reserve(c, 1, at, 0, NOW, HOUR)).toBe(true); // capacity 0 = unlimited
+    expect(await schedules.reserve(done, 1, slot(), 0, NOW, HOUR)).toBe(false); // not pending any more
+    expect((await schedules.taken(1, at, at + 1, NOW, a)).get(at)).toBe(2); // the customer choosing doesn't count themselves
+
+    await schedules.release(a);
+    expect(await schedules.slotsOf(a)).toEqual([]);
+    await setStatus(b, 'payed');
+    await schedules.release(b); // a paid order's booking isn't released
+    expect(await schedules.slotsOf(b)).toHaveLength(1);
+  });
+
+  it('keeps a hold only while it is valid when the receipt arrives', async () => {
+    const [a, at] = [await seedOrder('pending'), slot()];
+    await schedules.reserve(a, 1, at, 1, NOW, HOUR);
+    expect(await schedules.stillHeld(a, 1, NOW + 10, NOW + 700)).toBe(true);
+    expect((await schedules.slotsOf(a))[0]!.hold_until).toBe(NOW + HOUR); // never shortened
+    expect(await schedules.stillHeld(a, 1, NOW + 2 * HOUR, NOW + 2 * HOUR + 700)).toBe(false); // ran out
+    expect(await schedules.stillHeld(a, 2, NOW + 10, NOW + 700)).toBe(false); // one of two is missing
+  });
+
+  it('applies scheduling only while the shop switch and the schedule are on', async () => {
+    await db.prepare("DELETE FROM settings WHERE shop_id = 1 AND setting_key = 'scheduling_enabled'").run();
+    expect(await schedules.save(1, { enabled: 1, label: 'x', days: 127, times: '10:00', capacity: 0, lead_minutes: 0, horizon_days: 7 })).toBe(true);
+    expect(await schedules.save(999, { enabled: 1, label: 'x', days: 127, times: '10:00', capacity: 0, lead_minutes: 0, horizon_days: 7 })).toBe(false); // not this shop's category
+    expect(await schedules.active(1)).toBeNull(); // the shop switch is off
+    await schedules.setEnabled(true);
+    expect((await schedules.active(1))?.name).toBe((await new CategoryRepository(db, 1).find(1))!.name);
+    await schedules.update(1, 'enabled', 0);
+    expect(await schedules.active(1)).toBeNull();
+    await schedules.update(1, 'enabled', 1);
+    await schedules.update(1, 'times', '');
+    expect(await schedules.active(1)).toBeNull(); // no times, nothing to offer
+    expect(() => schedules.update(1, 'shop_id' as never, 2)).toThrow('bad schedule field');
+    // Another shop sees none of it.
+    expect(await new ScheduleRepository(db, 2).find(1)).toBeNull();
+    await schedules.remove(1);
   });
 });
 

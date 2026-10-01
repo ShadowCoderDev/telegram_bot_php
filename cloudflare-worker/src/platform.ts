@@ -15,7 +15,7 @@ import { LIMITS, charCount } from './limits';
 import { DAY, MONTH, RENEW_OPTIONS, dueReminder } from './services/subscription';
 import { BotContext } from './telegram/BotContext';
 import { Router } from './telegram/Router';
-import { TelegramApiError, TelegramClient } from './telegram/TelegramClient';
+import { HOOK_VERSION, TelegramApiError, TelegramClient } from './telegram/TelegramClient';
 import type { Update } from './telegram/types';
 import { shopClaimCode } from './tenancy';
 import { formatPersianDate, parseAmount, tehranDayAndMonthStart } from './utils/persian';
@@ -121,6 +121,7 @@ export async function provisionShop(d: PlatformDeps, ownerChatId: number, token:
     if (!existing) await d.shops.setStatus(id, 'deleted');
     return { ok: false, reason: 'webhook', detail: err instanceof TelegramApiError ? err.description : String(err) };
   }
+  await d.shops.setHookVersion(id, HOOK_VERSION);
   return { ok: true, shop: (await d.shops.find(id))!, revived: Boolean(existing) };
 }
 
@@ -259,6 +260,7 @@ function registerSellerRoutes(router: Router, d: PlatformDeps): Router {
       if (!shop) return shops(ctx);
       try {
         await d.botClient(await decryptToken(shop.bot_token_enc, d.masterKey)).setWebhook(`${d.origin}/webhook/${shop.id}`, shop.webhook_secret);
+        await d.shops.setHookVersion(shop.id, HOOK_VERSION);
         await ctx.reply({ text: '✅ ربات دوباره به پلتفرم وصل شد.' });
       } catch {
         await ctx.reply({ text: '❌ اتصال ناموفق بود. اگر توکن را عوض کرده‌اید، از «🔑 تغییر توکن» استفاده کنید.' });
@@ -306,6 +308,7 @@ async function changeToken(ctx: BotContext, d: PlatformDeps, shopId: number, tok
   if (me.id !== shop.bot_id) return ctx.reply({ text: sections('⚠️ این توکن مال ربات دیگری است؛ توکن جدید همان ربات فروشگاه را بفرستید.', CANCEL_HINT) });
   await d.shops.updateToken(shop.id, await encryptToken(token, d.masterKey), me.username ?? shop.bot_username);
   await bot.setWebhook(`${d.origin}/webhook/${shop.id}`, shop.webhook_secret);
+  await d.shops.setHookVersion(shop.id, HOOK_VERSION);
   await d.sessions.clear(ctx.chatId);
   await ctx.reply({ text: '✅ توکن به‌روز شد و ربات دوباره وصل شد.' });
 }

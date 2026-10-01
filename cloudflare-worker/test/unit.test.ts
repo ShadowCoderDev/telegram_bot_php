@@ -11,12 +11,16 @@ import { formatPersianDate, parseAmount, tehranDayAndMonthStart, toEnglishDigits
 import { cartView, myOrdersView, productCard } from '../src/views/user';
 import { parseAdminIds } from '../src/deps';
 import { capAlert, dailyCap, parseCapacitySettings } from '../src/capacity';
+import type { Product } from '../src/db/models';
 import { PLATFORM_SETTING_DEFAULTS } from '../src/db/repositories';
 import { UNCAPPED, utcDay } from '../src/db/usage';
 import { flooding, onceEvery } from '../src/flood';
 import { dueReminder, purgeAt } from '../src/services/subscription';
 import { LESSONS, lessonView } from '../src/views/tutorial';
 import { splitIcon } from '../src/handlers/admin';
+import { handleInline, inlineCard, inlineResults } from '../src/inline';
+import type { Deps } from '../src/deps';
+import { TelegramApiError } from '../src/telegram/TelegramClient';
 
 describe('persian utils', () => {
   it('normalises Persian and Arabic digits', () => {
@@ -271,5 +275,89 @@ describe('category typed while adding a product', () => {
     expect(splitIcon('❤️عطر')).toEqual({ icon: '❤️', name: 'عطر' });
     expect(splitIcon(' کفش ')).toEqual({ icon: '📂', name: 'کفش' });
     expect(splitIcon('📚').name).toBe('');
+  });
+});
+
+describe('inline results', () => {
+  const product = (over: Partial<Product> = {}): Product => ({
+    id: 7, category_id: 1, title: 'Cat <b>', description: 'd'.repeat(500), price: 120000, author: 'A & B', image_url: '', image_file_id: '', inventory: 3, status: 'enable', ...over,
+  });
+
+  it('makes a photo card for a product with a photo and a text card otherwise, both opening the product in the bot', () => {
+    const [text, photo] = inlineResults([product(), product({ id: 8, image_file_id: 'FILE' })], 'My shop', 'my_bot');
+    expect(text).toMatchObject({ type: 'article', id: 'p7', title: 'Cat <b>', description: '120,000 تومان · موجود' });
+    expect(photo).toMatchObject({ type: 'photo', id: 'p8', photo_file_id: 'FILE', parse_mode: 'HTML' });
+    for (const r of [text, photo]) expect(JSON.stringify(r!.reply_markup)).toContain('https://t.me/my_bot?start=p_');
+  });
+
+  it('escapes text, shortens descriptions and marks a product that is out of stock', () => {
+    const card = inlineCard(product({ inventory: 0 }), 'Shop <x>');
+    expect(card).toContain('Cat &lt;b&gt;');
+    expect(card).toContain('A &amp; B');
+    expect(card).toContain('Shop &lt;x&gt;');
+    expect(card).toContain('ناموجود');
+    expect(card.length).toBeLessThan(400);
+  });
+
+  it('has no button when the bot\'s @username is unknown', () => {
+    expect(inlineResults([product()], 'S', '')[0]!.reply_markup).toBeUndefined();
+  });
+});
+
+describe('inline handler', () => {
+  const PRODUCT: Product = { id: 1, category_id: 1, title: 'Book', description: '', price: 1000, author: '', image_url: '', image_file_id: 'DOC_FILE', inventory: 1, status: 'enable' };
+  let shopNo = 9000;
+
+  /** The few parts of Deps the handler touches; `refusePhotos` makes Telegram reject photo results. */
+  function setup(opts: { refusePhotos?: boolean; plan?: 'owner' | 'paid'; paidUntil?: number } = {}) {
+    const answers: { results: { type: string }[]; extra: unknown }[] = [];
+    let searches = 0;
+    const d = {
+      shop: { id: ++shopNo, plan: opts.plan ?? 'owner', status: 'active', paid_until: opts.paidUntil ?? 0, bot_username: 'shop_bot' },
+      usage: { flushInline: async () => {} },
+      settings: { raw: async () => 'My shop' },
+      products: { searchVisible: async () => (searches++, [PRODUCT]) },
+      tg: {
+        answerInlineQuery: async (_id: string, results: { type: string }[], extra: unknown) => {
+          if (opts.refusePhotos && results.some((r) => r.type === 'photo')) throw new TelegramApiError('answerInlineQuery', 400, 'wrong file identifier');
+          answers.push({ results, extra });
+        },
+      },
+    } as unknown as Deps;
+    return { d, answers, searches: () => searches };
+  }
+  const query = (text: string, from = 1) => ({ id: 'q', from: { id: from, first_name: 'U' }, query: text, offset: '' });
+
+  it('answers again with text cards when Telegram refuses a photo, and remembers that', async () => {
+    const t = setup({ refusePhotos: true });
+    await handleInline(t.d, query('book'));
+    expect(t.answers).toHaveLength(1);
+    expect(t.answers[0]!.results.map((r) => r.type)).toEqual(['article']);
+    await handleInline(t.d, query('book', 2)); // the same words from someone else: kept answer, no new search
+    expect(t.searches()).toBe(1);
+    expect(t.answers).toHaveLength(2);
+  });
+
+  it('keeps photos when Telegram accepts them', async () => {
+    const t = setup();
+    await handleInline(t.d, query('x'));
+    expect(t.answers[0]!.results.map((r) => r.type)).toEqual(['photo']);
+    expect(t.answers[0]!.extra).toMatchObject({ button: { start_parameter: 'shop' } });
+  });
+
+  it('stops answering a person who types faster than anyone can read', async () => {
+    const t = setup();
+    for (let i = 0; i < 25; i++) await handleInline(t.d, query(`w${i}`, 77));
+    expect(t.answers.length).toBe(20);
+    await handleInline(t.d, query('other', 78)); // someone else is unaffected
+    expect(t.answers.length).toBe(21);
+  });
+
+  it('shows nothing of a shop that is closed', async () => {
+    const t = setup({ plan: 'paid', paidUntil: 1 });
+    await handleInline(t.d, query(''));
+    expect(t.answers[0]!.results).toHaveLength(1);
+    expect(JSON.stringify(t.answers[0]!.results)).toContain('موقتاً در دسترس نیست');
+    expect(t.searches()).toBe(0);
   });
 });

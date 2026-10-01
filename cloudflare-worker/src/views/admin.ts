@@ -11,6 +11,7 @@ import type { ButtonStyle, InlineKeyboardButton, View } from '../telegram/types'
 import { escapeHtml as e, money, truncate } from '../utils/format';
 import { formatPersianDate } from '../utils/persian';
 import { CB } from './callbacks';
+import { slotLines } from './slots';
 import { CANCEL_HINT, contactLines, expandable, fa, heading, hint, itemsWithTotal, num, progress, quote, sections, toman } from './common';
 
 const A = CB.admin;
@@ -98,7 +99,7 @@ const usageLine = (u: UsageInfo): string => {
   return line;
 };
 
-export const adminRoot = (awaitingReview = 0, subscription?: SubscriptionInfo, usage?: UsageInfo): View => ({
+export const adminRoot = (awaitingReview = 0, subscription?: SubscriptionInfo, usage?: UsageInfo, scheduling = false): View => ({
   text: sections(
     heading('🔐', 'پنل مدیریت'),
     subscription && subscriptionLine(subscription),
@@ -114,7 +115,7 @@ export const adminRoot = (awaitingReview = 0, subscription?: SubscriptionInfo, u
       button(awaitingReview ? `🧾 سفارشات (🟡 ${fa(awaitingReview)})` : '🧾 سفارشات', A.orders, 'primary'),
       button('👥 مشتریان', A.customers, 'primary'),
     ],
-    [button('📊 آمار', A.stats)],
+    scheduling ? [button('📅 برنامه و نوبت‌ها', A.agenda, 'primary'), button('📊 آمار', A.stats)] : [button('📊 آمار', A.stats)],
     [button('➕ محصول جدید', A.addProduct, 'success'), button('➕ دسته‌بندی جدید', A.addCategory, 'success')],
     [button('✏️ محصولات', A.products), button('📂 دسته‌بندی‌ها', A.categories)],
     [button('❓ سوالات متداول', A.faqs), button('⚙️ تنظیمات', A.settings)],
@@ -213,7 +214,8 @@ export const settingsMenu = (values: Record<SettingKey, string>, fields?: Checko
     [button(SETTING_LABELS.shop_name.button, A.editSetting('shop_name')), button(SETTING_LABELS.welcome_text.button, A.editSetting('welcome_text'))],
     [button(SETTING_LABELS.bank_info.button, A.editSetting('bank_info')), button(SETTING_LABELS.support.button, A.editSetting('support'))],
     [button(SETTING_LABELS.help_text.button, A.editSetting('help_text')), button(SETTING_LABELS.track_prefix.button, A.editSetting('track_prefix'))],
-    [button('🧾 اطلاعات ثبت سفارش', A.checkoutFields), button('👮 ادمین‌ها', A.admins)],
+    [button('⏰ زمان‌بندی سفارش', A.schedule), button('🧾 اطلاعات ثبت سفارش', A.checkoutFields)],
+    [button('👮 ادمین‌ها', A.admins)],
     toAdminRoot(),
   ),
 });
@@ -295,6 +297,7 @@ export const categoryPage = (c: CategoryWithCount): View => ({
   keyboard: inline(
     [button('✏️ تغییر نام', A.editCategory(c.id, 'name')), button('🎨 تغییر ایموجی', A.editCategory(c.id, 'icon'))],
     [toggleButton(c.status, A.toggleCategory(c.id)), ...(c.product_count ? [] : [button('🗑 حذف', A.deleteCategory(c.id), 'danger')])],
+    [button('⏰ زمان‌بندی سفارش این دسته', A.scheduleCategory(c.id))],
     backRow(A.categories, '🔙 لیست دسته‌بندی‌ها'),
   ),
 });
@@ -466,11 +469,12 @@ const ACTION_BUTTONS: Record<AdminOrderAction, [string, ButtonStyle]> = {
 };
 
 /** Order card with the receipt photo; `title` distinguishes a new-order alert from a lookup. */
-export const orderView = ({ order, details, lines }: FullOrder, title = heading('🧾', 'جزئیات سفارش')): View => {
+export const orderView = ({ order, details, lines, slots }: FullOrder, title = heading('🧾', 'جزئیات سفارش')): View => {
   const contact = details && contactLines({ name: `${details.first_name} ${details.last_name}`, address: details.address, phone: details.phone_number });
   const text = sections(
     `${title}\n<code>${order.track_id}</code>`,
     `🗓 ${formatPersianDate(order.time)}\n📌 وضعیت: <b>${STATUS_FA[order.status]}</b>`,
+    slots.length > 0 && slotLines(slots),
     contact && quote(contact),
     itemsWithTotal(lines),
   );
