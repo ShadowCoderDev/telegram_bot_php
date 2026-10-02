@@ -1,0 +1,146 @@
+{
+  "meta": {
+    "title": "ربات فروشگاه تلگرامی – معرفی و نحوه کار",
+    "language": "fa",
+    "direction": "rtl",
+    "product": "پلتفرم ساخت فروشگاه تلگرامی (@XiGenBot)",
+    "audience": "فروشنده‌های کوچک و متوسط: کتاب، غذا، دوره آنلاین، نوبت‌دهی (پزشک، آرایشگاه، مشاوره)",
+    "platforms": ["YouTube Shorts", "Instagram Reels", "YouTube (افقی)"],
+    "formats": [
+      { "name": "vertical", "width": 1080, "height": 1920, "fps": 30, "note": "Reels / Shorts" },
+      { "name": "landscape", "width": 1920, "height": 1080, "fps": 30, "note": "YouTube" }
+    ],
+    "rules": [
+      "هیچ قیمت، عدد پولی، تعرفه، اشتراک یا مبلغی در ویدیو نوشته یا گفته نشود.",
+      "از وعده‌ی «رایگان» یا «تخفیف» هم استفاده نشود.",
+      "متن‌ها فارسی و راست‌به‌چپ؛ دکمه‌ها همان دکمه‌های شیشه‌ای واقعی ربات هستند."
+    ]
+  },
+  "style": {
+    "look": "ماکت گوشی با چت تلگرام تیره، دکمه‌های شیشه‌ای شفاف، تیتر درشت بالای گوشی",
+    "palette": { "bg1": "#0b1a2b", "bg2": "#143a5c", "accent": "#35b6ff", "accent2": "#7c5cff", "text": "#ffffff" },
+    "font": "Vazirmatn",
+    "motion": "پیام‌ها نرم از پایین بالا می‌آیند، لمس دکمه با موج دایره‌ای، انتقال بین صحنه‌ها محو سریع",
+    "music_prompt": "upbeat modern lo-fi electronic, light and optimistic, 100 bpm, no vocals, subtle whooshes on taps",
+    "voiceover": { "enabled": false, "note": "در صورت نیاز می‌توانید فیلد voiceover هر صحنه را با صدای خودتان بخوانید." }
+  },
+  "ai_video_prompt": {
+    "global": "Vertical 9:16 product explainer. A smartphone floats centered over a deep-blue gradient. On screen: a dark Telegram-style chat in Persian (right-to-left) with translucent glass inline buttons. Clean UI motion graphics, big readable Persian headline above the phone, smooth message slide-ups, tap ripples on buttons. No prices, no currency, no logos of real brands. 30 fps, crisp, minimal.",
+    "negative": "prices, numbers with currency, watermarks, real people faces, distorted Persian letters, English-only text, clutter"
+  },
+  "scenes": [
+    {
+      "id": "hook", "type": "title", "duration": 4.5,
+      "caption": "فروشگاه تلگرامی خودت رو بساز",
+      "sub": "بدون کدنویسی · بدون هاست · فقط با یک ربات",
+      "emoji": "🛍",
+      "visual_prompt": "Big bold Persian headline fades in over gradient, shopping bag icon pops with a soft glow, phone silhouette slides up from below."
+    },
+    {
+      "id": "create", "type": "chat", "duration": 9,
+      "caption": "۱. ربات خودت رو در چند دقیقه بساز",
+      "sub": "توکن BotFather رو بفرست، فروشگاه آماده است",
+      "chat": { "title": "XiGen · ساخت فروشگاه", "subtitle": "bot" },
+      "events": [
+        { "t": 0.3, "type": "msg", "from": "user", "text": "<span class=\"ltr\">/start</span>" },
+        { "t": 0.9, "type": "msg", "id": "w", "from": "bot", "text": "👋 <b>به ربات ساخت فروشگاه خوش اومدی!</b>\nفروشگاه تلگرامی خودت رو بساز؛ دسته‌بندی، محصول، سبد خرید و سفارش‌ها آماده است.", "buttons": [[{ "text": "➕ ساخت فروشگاه", "style": "primary" }], [{ "text": "🏪 فروشگاه‌های من" }, { "text": "📚 آموزش" }]] },
+        { "t": 2.6, "type": "tap", "label": "➕ ساخت فروشگاه" },
+        { "t": 3.1, "type": "msg", "from": "bot", "text": "➕ <b>ساخت فروشگاه</b>\n\n۱. به @BotFather بروید و /newbot بفرستید.\n۲. اسم و یوزرنیم ربات را انتخاب کنید.\n۳. توکن را همین‌جا بفرستید:", "buttons": [[{ "text": "✖️ انصراف" }]] },
+        { "t": 5.0, "type": "msg", "from": "user", "text": "<span class=\"ltr\">7412•••••:AAH•••••••••••••••</span>" },
+        { "t": 6.0, "type": "msg", "from": "bot", "text": "🎉 <b>فروشگاه شما ساخته شد!</b>\n\n🤖 <span class=\"ltr\">@my_shop_bot</span>\nحالا وارد ربات خودتان شوید و /start بزنید.", "buttons": [[{ "text": "🏪 فروشگاه من", "style": "success" }]] }
+      ]
+    },
+    {
+      "id": "admin", "type": "chat", "duration": 9,
+      "caption": "۲. همه‌چیز با دکمه‌های شیشه‌ای",
+      "sub": "دسته‌بندی و محصول بساز؛ بدون نوشتن دستور",
+      "chat": { "title": "پنل مدیریت فروشگاه", "subtitle": "bot" },
+      "events": [
+        { "t": 0.3, "type": "msg", "id": "r", "from": "bot", "text": "🛠 <b>پنل مدیریت</b>\nچه کاری می‌خواهید انجام دهید؟", "buttons": [[{ "text": "📦 محصولات", "style": "primary" }, { "text": "📂 دسته‌بندی‌ها" }], [{ "text": "🧾 سفارشات" }, { "text": "👥 مشتریان" }], [{ "text": "📊 آمار" }, { "text": "⚙️ تنظیمات" }]] },
+        { "t": 1.8, "type": "tap", "label": "📦 محصولات" },
+        { "t": 2.3, "type": "edit", "id": "r", "text": "📦 <b>محصولات</b>\nیک محصول را انتخاب کنید یا محصول جدید بسازید:", "buttons": [[{ "text": "➕ افزودن محصول", "style": "success" }], [{ "text": "📘 دوره زبان انگلیسی" }], [{ "text": "📗 کتاب آزمون آیلتس" }], [{ "text": "🔙 پنل مدیریت" }]] },
+        { "t": 3.8, "type": "tap", "label": "➕ افزودن محصول" },
+        { "t": 4.3, "type": "msg", "from": "bot", "text": "📝 <b>محصول جدید</b>  🟩🟩⬜️⬜️\nعنوان محصول را بفرستید:", "buttons": [[{ "text": "✖️ انصراف" }]] },
+        { "t": 5.5, "type": "msg", "from": "user", "text": "کتاب مکالمه روزمره" },
+        { "t": 6.4, "type": "msg", "from": "bot", "text": "📂 <b>دسته‌بندی</b> این محصول را انتخاب کنید:\n<i>یا اسم یک دسته‌ی جدید را بفرستید تا همین‌جا ساخته شود.</i>", "buttons": [[{ "text": "📚 کتاب‌ها" }], [{ "text": "🩺 نوبت‌ها" }]] },
+        { "t": 7.6, "type": "tap", "label": "📚 کتاب‌ها" },
+        { "t": 8.1, "type": "msg", "from": "bot", "text": "✅ محصول ساخته شد.", "buttons": [[{ "text": "🔙 پنل مدیریت" }]] }
+      ]
+    },
+    {
+      "id": "schedule", "type": "chat", "duration": 8.5,
+      "caption": "۳. نوبت‌دهی و زمان تحویل، یک‌ضرب",
+      "sub": "قالب آماده بزن؛ روز، ساعت و ظرفیت تنظیم می‌شود",
+      "chat": { "title": "زمان‌بندی سفارش", "subtitle": "bot" },
+      "events": [
+        { "t": 0.3, "type": "msg", "id": "s", "from": "bot", "text": "🗓 <b>زمان‌بندی این دسته‌بندی</b>\n🩺 <b>نوبت‌ها</b>\n\nمشتری روز و ساعت را خودش انتخاب می‌کند. با یک قالب آماده شروع کنید:", "buttons": [[{ "text": "🍽 تحویل غذا و سفارش روزانه" }], [{ "text": "🩺 نوبت‌دهی (پزشک، مشاوره، آرایشگاه)", "style": "primary" }], [{ "text": "📦 دریافت حضوری کالا" }]] },
+        { "t": 2.4, "type": "tap", "label": "🩺 نوبت‌دهی (پزشک، مشاوره، آرایشگاه)" },
+        { "t": 2.9, "type": "edit", "id": "s", "text": "🗓 <b>زمان‌بندی: زمان نوبت</b>\n\n<blockquote>📅 روزها: <b>شنبه تا چهارشنبه</b>\n🕒 ساعت‌ها: <b>۱۶:۰۰ تا ۱۹:۳۰</b>\n👥 ظرفیت هر زمان: <b>۱ سفارش</b>\n🔔 یادآوری به مشتری: <b>۳ ساعت قبل</b></blockquote>\n\n👀 نزدیک‌ترین زمان برای مشتری:\n<b>شنبه ۱۶:۰۰</b>", "buttons": [[{ "text": "📅 روزها" }, { "text": "🕒 ساعت‌ها" }], [{ "text": "👥 ظرفیت" }, { "text": "⏳ حداقل فاصله" }], [{ "text": "📆 تا چند روز بعد" }, { "text": "🔔 یادآوری", "style": "primary" }]] },
+        { "t": 5.2, "type": "tap", "label": "🔔 یادآوری" },
+        { "t": 5.7, "type": "edit", "id": "s", "text": "🔔 <b>یادآوری به مشتری</b>\nربات چه مدت قبل از زمان برای مشتری یادآوری بفرستد؟", "buttons": [[{ "text": "خاموش" }, { "text": "۳۰ دقیقه قبل" }], [{ "text": "۱ ساعت قبل" }, { "text": "✅ ۳ ساعت قبل", "style": "success" }], [{ "text": "۱ روز قبل" }]] },
+        { "t": 7.0, "type": "tap", "label": "۱ ساعت قبل" }
+      ]
+    },
+    {
+      "id": "customer", "type": "chat", "duration": 11,
+      "caption": "۴. مشتری راحت خرید و رزرو می‌کند",
+      "sub": "انتخاب روز و ساعت با دکمه؛ ساعت پر، خودکار حذف می‌شود",
+      "chat": { "title": "فروشگاه من", "subtitle": "bot" },
+      "events": [
+        { "t": 0.3, "type": "msg", "id": "p", "from": "bot", "text": "🩺 <b>ویزیت عمومی</b>\n✍️ دکتر احمدی\n\n📅 این محصول با انتخاب <b>زمان نوبت</b> سفارش داده می‌شود.", "buttons": [[{ "text": "🛒 افزودن به سبد", "style": "primary" }], [{ "text": "🏠 منوی اصلی" }]] },
+        { "t": 1.6, "type": "tap", "label": "🛒 افزودن به سبد" },
+        { "t": 2.1, "type": "msg", "id": "c", "from": "bot", "text": "🛒 <b>سبد خرید شما</b>\n\n📦 ویزیت عمومی × ۱", "buttons": [[{ "text": "✅ تکمیل خرید", "style": "success" }], [{ "text": "❌ خالی کردن سبد", "style": "danger" }]] },
+        { "t": 3.4, "type": "tap", "label": "✅ تکمیل خرید" },
+        { "t": 3.9, "type": "msg", "id": "d", "from": "bot", "text": "🧾 <b>تکمیل خرید</b>  🟩⬜️⬜️⬜️⬜️\n📅 روز <b>زمان نوبت</b> را انتخاب کنید:", "buttons": [[{ "text": "📅 شنبه ۱۴" }, { "text": "📅 یکشنبه ۱۵" }], [{ "text": "📅 دوشنبه ۱۶" }], [{ "text": "❌ انصراف از خرید", "style": "danger" }]] },
+        { "t": 5.4, "type": "tap", "label": "📅 یکشنبه ۱۵" },
+        { "t": 5.9, "type": "edit", "id": "d", "text": "🕒 ساعت <b>یکشنبه ۱۵</b> را انتخاب کنید:", "buttons": [[{ "text": "۱۶:۰۰" }, { "text": "۱۶:۳۰" }, { "text": "۱۷:۰۰" }], [{ "text": "۱۷:۳۰" }, { "text": "۱۸:۰۰" }, { "text": "۱۸:۳۰" }], [{ "text": "🔙 روزها" }, { "text": "❌ انصراف از خرید", "style": "danger" }]] },
+        { "t": 7.4, "type": "tap", "label": "۱۷:۰۰" },
+        { "t": 7.9, "type": "msg", "from": "bot", "text": "👤 لطفاً <b>نام</b> خود را بفرستید:", "buttons": [[{ "text": "✅ همان «سارا»", "style": "primary" }], [{ "text": "❌ انصراف از خرید", "style": "danger" }]] },
+        { "t": 9.2, "type": "tap", "label": "✅ همان «سارا»" },
+        { "t": 9.8, "type": "msg", "from": "bot", "text": "📸 بعد از واریز، <b>عکس رسید</b> را همین‌جا بفرستید." }
+      ]
+    },
+    {
+      "id": "seller", "type": "chat", "duration": 8.5,
+      "caption": "۵. سفارش به دست تو می‌رسد",
+      "sub": "با یک دکمه تایید کن؛ مشتری خودکار خبردار می‌شود",
+      "chat": { "title": "اعلان سفارش", "subtitle": "bot" },
+      "events": [
+        { "t": 0.3, "type": "msg", "id": "o", "from": "bot", "text": "🔔 <b>سفارش جدید</b>\n\n👤 سارا\n📅 <b>زمان نوبت: یکشنبه ۱۷:۰۰</b>\n🟡 در انتظار تایید", "buttons": [[{ "text": "✅ تایید", "style": "success" }, { "text": "❌ رد", "style": "danger" }], [{ "text": "✉️ گفتگو با خریدار" }]] },
+        { "t": 2.2, "type": "tap", "label": "✅ تایید" },
+        { "t": 2.7, "type": "edit", "id": "o", "text": "🔔 <b>سفارش تایید شد</b>\n\n👤 سارا\n📅 <b>زمان نوبت: یکشنبه ۱۷:۰۰</b>\n🟢 تایید شده", "buttons": [[{ "text": "📅 برنامه و نوبت‌ها", "style": "primary" }], [{ "text": "🔙 پنل مدیریت" }]] },
+        { "t": 4.2, "type": "tap", "label": "📅 برنامه و نوبت‌ها" },
+        { "t": 4.7, "type": "edit", "id": "o", "text": "📅 <b>برنامه‌ی یکشنبه ۱۵</b>\n\n<blockquote>🕒 <b>۱۷:۰۰</b> · سارا · 🟢\n🕒 <b>۱۷:۳۰</b> · رضا · 🟢\n🕒 <b>۱۸:۰۰</b> · مریم · 🟡</blockquote>", "buttons": [[{ "text": "⬅️ روز قبل" }, { "text": "روز بعد ➡️" }], [{ "text": "🔙 پنل مدیریت" }]] }
+      ]
+    },
+    {
+      "id": "reminder", "type": "chat", "duration": 6,
+      "caption": "۶. یادآوری خودکار قبل از نوبت",
+      "sub": "مشتری یادش نمی‌رود؛ نوبت خالی نمی‌ماند",
+      "chat": { "title": "فروشگاه من", "subtitle": "bot" },
+      "events": [
+        { "t": 0.6, "type": "msg", "from": "bot", "text": "🔔 <b>یادآوری</b>\n\n🏪 <b>فروشگاه من</b>\n\n<blockquote>📅 زمان نوبت\n🕒 <b>یکشنبه ۱۷:۰۰</b>\n⏳ ۳ ساعت دیگر</blockquote>\n<i>کد پیگیری سفارش: TRK-48213</i>", "buttons": [[{ "text": "📋 سفارش‌های من", "style": "primary" }], [{ "text": "🏠 منوی اصلی" }]] },
+        { "t": 3.8, "type": "tap", "label": "📋 سفارش‌های من" }
+      ]
+    },
+    {
+      "id": "inline", "type": "chat", "duration": 7,
+      "caption": "۷. جستجو در هر چت (Inline)",
+      "sub": "اسم ربات + نام محصول؛ کارت محصول برای دوستانت",
+      "chat": { "title": "گفتگو با دوست", "subtitle": "آنلاین" },
+      "events": [
+        { "t": 0.4, "type": "msg", "from": "user", "text": "<span class=\"ltr\">@my_shop_bot</span> کتاب" },
+        { "t": 1.2, "type": "panel", "until": 5.2, "items": [{ "title": "📘 کتاب مکالمه روزمره", "desc": "موجود" }, { "title": "📗 کتاب آزمون آیلتس", "desc": "موجود" }, { "title": "📙 کتاب گرامر کاربردی", "desc": "موجود" }] },
+        { "t": 3.4, "type": "tap", "label": "📘 کتاب مکالمه روزمره" },
+        { "t": 4.2, "type": "msg", "from": "user", "text": "📘 <b>کتاب مکالمه روزمره</b>\n🏪 <i>فروشگاه من</i>", "buttons": [[{ "text": "🛍 مشاهده و خرید", "style": "primary" }]] }
+      ]
+    },
+    {
+      "id": "cta", "type": "title", "duration": 5,
+      "caption": "همین حالا فروشگاهت رو بساز",
+      "sub": "ربات ساخت فروشگاه: @XiGenBot",
+      "emoji": "🚀",
+      "visual_prompt": "Headline and bot handle fade in over gradient, tap ripple pulses on a glass button, soft glow."
+    }
+  ]
+}

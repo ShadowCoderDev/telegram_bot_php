@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<style>
+@font-face { font-family: 'Vazirmatn'; src: url('fonts/Vazirmatn.woff2') format('woff2'); font-weight: 100 900; }
+:root { --fs: 33px; --phoneW: 940px; --phoneH: 1330px; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0b1a2b; font-family: 'Vazirmatn', 'Noto Color Emoji', sans-serif; color: #fff; }
+#stage { position: absolute; inset: 0; overflow: hidden; }
+#bg { position: absolute; inset: 0; }
+.blob { position: absolute; border-radius: 50%; filter: blur(110px); opacity: .55; }
+#caption { position: absolute; text-align: center; }
+#caption .c { font-weight: 800; line-height: 1.35; text-shadow: 0 4px 30px rgba(0,0,0,.35); }
+#caption .s { font-weight: 500; color: #bfe3ff; margin-top: 18px; line-height: 1.5; }
+#phone { position: absolute; width: var(--phoneW); height: var(--phoneH); border-radius: 64px; background: #0e1621; border: 12px solid #1d2b3a; box-shadow: 0 40px 120px rgba(0,0,0,.55), 0 0 0 2px #2c3e50; overflow: hidden; }
+#head { position: absolute; top: 0; left: 0; right: 0; height: calc(var(--fs) * 3.1); background: #17212b; display: flex; align-items: center; gap: calc(var(--fs) * .6); padding: 0 calc(var(--fs) * .9); border-bottom: 1px solid #0d141b; z-index: 3; }
+#avatar { width: calc(var(--fs) * 1.9); height: calc(var(--fs) * 1.9); border-radius: 50%; background: linear-gradient(135deg, #35b6ff, #7c5cff); display: flex; align-items: center; justify-content: center; font-size: calc(var(--fs) * 1.0); }
+#htitle { font-weight: 700; font-size: calc(var(--fs) * 1.0); }
+#hsub { font-size: calc(var(--fs) * .72); color: #7f91a4; }
+#chat { position: absolute; top: calc(var(--fs) * 3.1); bottom: calc(var(--fs) * 2.6); left: 0; right: 0; background: radial-gradient(circle at 20% 10%, #13202d, #0e1621 60%); display: flex; flex-direction: column; justify-content: flex-end; padding: 0 calc(var(--fs) * .6); overflow: hidden; }
+#input { position: absolute; bottom: 0; left: 0; right: 0; height: calc(var(--fs) * 2.6); background: #17212b; display: flex; align-items: center; padding: 0 calc(var(--fs) * .9); gap: calc(var(--fs) * .6); color: #6c7e90; font-size: calc(var(--fs) * .9); z-index: 3; }
+#input .box { flex: 1; height: calc(var(--fs) * 1.7); border-radius: 999px; background: #0e1621; display: flex; align-items: center; padding: 0 calc(var(--fs) * .8); }
+.wrap { display: flex; align-items: flex-end; overflow: hidden; flex: none; }
+.row { width: 100%; padding: calc(var(--fs) * .22) 0; display: flex; flex-direction: column; }
+.row.user { align-items: flex-end; }
+.row.bot { align-items: flex-start; }
+.bubble { max-width: 90%; padding: calc(var(--fs) * .42) calc(var(--fs) * .62); border-radius: calc(var(--fs) * .7); font-size: var(--fs); line-height: 1.65; white-space: pre-wrap; direction: rtl; text-align: right; }
+.bot .bubble { background: #182533; border-bottom-left-radius: calc(var(--fs) * .2); }
+.user .bubble { background: #2b5278; border-bottom-right-radius: calc(var(--fs) * .2); }
+.bubble b { font-weight: 700; }
+.bubble i { color: #9fb2c4; font-style: normal; }
+.bubble blockquote { margin: calc(var(--fs) * .25) 0; padding: calc(var(--fs) * .15) calc(var(--fs) * .55) calc(var(--fs) * .15) 0; border-right: calc(var(--fs) * .12) solid #35b6ff; background: rgba(53,182,255,.08); border-radius: calc(var(--fs) * .2); }
+.ltr { direction: ltr; unicode-bidi: embed; display: inline-block; }
+.kb { width: 90%; display: flex; flex-direction: column; gap: calc(var(--fs) * .18); margin-top: calc(var(--fs) * .18); }
+.kbrow { display: flex; gap: calc(var(--fs) * .18); }
+.btn { flex: 1; min-height: calc(var(--fs) * 1.7); display: flex; align-items: center; justify-content: center; text-align: center; padding: calc(var(--fs) * .2) calc(var(--fs) * .4); border-radius: calc(var(--fs) * .5); background: rgba(255,255,255,.13); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,.12); font-size: calc(var(--fs) * .88); font-weight: 600; }
+.btn.primary { background: rgba(53,150,255,.45); border-color: rgba(120,190,255,.5); }
+.btn.success { background: rgba(46,184,110,.45); border-color: rgba(120,230,170,.5); }
+.btn.danger { background: rgba(235,80,80,.45); border-color: rgba(255,150,150,.5); }
+.btn.pressed { filter: brightness(1.7); transform: scale(.97); }
+#panel { position: absolute; left: calc(var(--fs) * .6); right: calc(var(--fs) * .6); bottom: calc(var(--fs) * 2.8); background: #17212b; border-radius: calc(var(--fs) * .7); box-shadow: 0 -10px 50px rgba(0,0,0,.5); z-index: 4; overflow: hidden; }
+#panel .item { padding: calc(var(--fs) * .55) calc(var(--fs) * .8); border-bottom: 1px solid #0f1822; font-size: var(--fs); }
+#panel .item .d { font-size: calc(var(--fs) * .75); color: #7f91a4; }
+#panel .item.pressed { background: #26384a; }
+#panel .open { padding: calc(var(--fs) * .5) calc(var(--fs) * .8); background: #1e2d3d; color: #5cc0ff; font-size: calc(var(--fs) * .85); font-weight: 600; }
+#tap { position: absolute; width: calc(var(--fs) * 2.4); height: calc(var(--fs) * 2.4); margin: calc(var(--fs) * -1.2) 0 0 calc(var(--fs) * -1.2); border-radius: 50%; border: 5px solid rgba(255,255,255,.9); background: rgba(255,255,255,.25); z-index: 9; pointer-events: none; opacity: 0; }
+#finger { position: absolute; font-size: calc(var(--fs) * 2.2); z-index: 10; opacity: 0; pointer-events: none; filter: drop-shadow(0 6px 10px rgba(0,0,0,.5)); }
+#title { position: absolute; text-align: center; left: 0; right: 0; }
+#title .e { line-height: 1.1; }
+#title .c { font-weight: 800; line-height: 1.35; text-shadow: 0 4px 30px rgba(0,0,0,.35); }
+#title .s { font-weight: 500; color: #bfe3ff; line-height: 1.6; margin-top: 24px; }
+#title .s .ltr { color: #fff; font-weight: 700; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bg"></div>
+  <div id="caption"><div class="c"></div><div class="s"></div></div>
+  <div id="phone">
+    <div id="head"><div id="avatar">🛍</div><div><div id="htitle"></div><div id="hsub"></div></div></div>
+    <div id="chat"></div>
+    <div id="panel" style="display:none"></div>
+    <div id="input"><div class="box">پیام</div><span>📎</span></div>
+    <div id="tap"></div>
+  </div>
+  <div id="finger">👆</div>
+  <div id="title"><div class="e"></div><div class="c"></div><div class="s"></div></div>
+</div>
+<script>
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const easeOut = (x) => 1 - Math.pow(1 - clamp(x), 3);
+const easeBack = (x) => { x = clamp(x); const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+let SPEC, FMT, scenes = [], total = 0, cache = {};
+
+const esc = (s) => s;
+function kbHtml(buttons) {
+  if (!buttons) return '';
+  return '<div class="kb">' + buttons.map((r) => '<div class="kbrow">' + r.map((b) => `<div class="btn ${b.style || ''}" data-label="${b.text.replace(/"/g, '&quot;')}">${b.text}</div>`).join('') + '</div>').join('') + '</div>';
+}
+
+window.init = (spec, fmt) => {
+  SPEC = spec; FMT = fmt;
+  const land = fmt.width > fmt.height;
+  document.getElementById('stage').style.width = fmt.width + 'px';
+  document.getElementById('stage').style.height = fmt.height + 'px';
+  const r = document.documentElement.style;
+  if (land) { r.setProperty('--fs', '24px'); r.setProperty('--phoneW', '600px'); r.setProperty('--phoneH', '1000px'); }
+  const ph = document.getElementById('phone'), cap = document.getElementById('caption'), title = document.getElementById('title');
+  if (land) {
+    ph.style.left = '150px'; ph.style.top = '40px';
+    Object.assign(cap.style, { left: '860px', right: '100px', top: '300px', textAlign: 'right' });
+    cap.querySelector('.c').style.fontSize = '84px'; cap.querySelector('.s').style.fontSize = '42px';
+    Object.assign(title.style, { top: '230px' });
+    title.querySelector('.e').style.fontSize = '170px'; title.querySelector('.c').style.fontSize = '110px'; title.querySelector('.s').style.fontSize = '52px';
+  } else {
+    ph.style.left = '70px'; ph.style.top = '500px';
+    Object.assign(cap.style, { left: '70px', right: '70px', top: '120px' });
+    cap.querySelector('.c').style.fontSize = '72px'; cap.querySelector('.s').style.fontSize = '40px';
+    Object.assign(title.style, { top: '520px' });
+    title.querySelector('.e').style.fontSize = '260px'; title.querySelector('.c').style.fontSize = '104px'; title.querySelector('.s').style.fontSize = '52px';
+    title.querySelector('.c').style.padding = '0 70px'; title.querySelector('.s').style.padding = '0 90px';
+  }
+  let acc = 0;
+  scenes = spec.scenes.map((s) => { const o = { ...s, start: acc }; acc += s.duration; return o; });
+  total = acc;
+  const bg = document.getElementById('bg');
+  bg.innerHTML = '<div class="blob" id="b1" style="width:700px;height:700px;background:#35b6ff"></div><div class="blob" id="b2" style="width:800px;height:800px;background:#7c5cff"></div><div class="blob" id="b3" style="width:600px;height:600px;background:#14c8a0"></div>';
+  return total;
+};
+
+/* Builds (once per scene) the elements of every message version and measures them. */
+function prepare(scene) {
+  if (cache[scene.id]) return cache[scene.id];
+  const chat = document.getElementById('chat');
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;visibility:hidden;left:0;right:0;top:0';
+  chat.appendChild(probe);
+  const versions = [];
+  const order = [];
+  (scene.events || []).forEach((ev, i) => {
+    if (ev.type !== 'msg' && ev.type !== 'edit') return;
+    const id = ev.id || 'm' + i;
+    const row = document.createElement('div');
+    row.className = 'row ' + (ev.from || (ev.type === 'edit' ? 'bot' : 'bot'));
+    if (ev.type === 'edit') row.className = 'row bot';
+    row.innerHTML = `<div class="bubble">${ev.text}</div>${kbHtml(ev.buttons)}`;
+    const wrap = document.createElement('div'); wrap.className = 'wrap'; wrap.appendChild(row);
+    probe.appendChild(wrap);
+    const h = row.getBoundingClientRect().height;
+    wrap.style.height = h + 'px';
+    chat.removeChild(probe); probe.removeChild(wrap); chat.appendChild(probe);
+    versions.push({ id, t: ev.t, type: ev.type, wrap, h });
+    if (!order.includes(id)) order.push(id);
+  });
+  chat.removeChild(probe);
+  const panels = (scene.events || []).filter((e) => e.type === 'panel');
+  return (cache[scene.id] = { versions, order, panels });
+}
+
+function drawBg(t) {
+  const W = FMT.width, H = FMT.height;
+  const g = document.getElementById('bg');
+  g.style.background = `linear-gradient(${160 + 20 * Math.sin(t / 5)}deg, #0b1a2b, #143a5c)`;
+  const set = (id, x, y) => { const e = document.getElementById(id); e.style.left = x + 'px'; e.style.top = y + 'px'; };
+  set('b1', W * 0.05 + 120 * Math.sin(t / 3), H * 0.05 + 100 * Math.cos(t / 4));
+  set('b2', W * 0.55 + 140 * Math.cos(t / 3.5), H * 0.45 + 120 * Math.sin(t / 2.7));
+  set('b3', W * 0.1 + 100 * Math.sin(t / 2.2), H * 0.7 + 90 * Math.cos(t / 3.1));
+}
+
+window.renderAt = (T) => {
+  T = clamp(T, 0, total - 0.001);
+  drawBg(T);
+  const scene = scenes.find((s) => T >= s.start && T < s.start + s.duration) || scenes.at(-1);
+  const lt = T - scene.start;
+  const fade = Math.min(clamp(lt / 0.3), clamp((scene.duration - lt) / 0.3));
+  const phone = document.getElementById('phone'), cap = document.getElementById('caption'), title = document.getElementById('title'), tap = document.getElementById('tap'), finger = document.getElementById('finger');
+  const isChat = scene.type === 'chat';
+  phone.style.display = isChat ? 'block' : 'none';
+  cap.style.display = isChat ? 'block' : 'none';
+  title.style.display = isChat ? 'none' : 'block';
+  tap.style.opacity = 0; finger.style.opacity = 0;
+
+  if (!isChat) {
+    title.style.opacity = fade;
+    title.querySelector('.e').textContent = scene.emoji || '';
+    title.querySelector('.e').style.transform = `scale(${0.4 + 0.6 * easeBack(lt / 0.7)})`;
+    title.querySelector('.c').textContent = scene.caption;
+    title.querySelector('.c').style.transform = `translateY(${(1 - easeOut((lt - 0.2) / 0.6)) * 50}px)`;
+    title.querySelector('.c').style.opacity = easeOut((lt - 0.2) / 0.5);
+    title.querySelector('.s').innerHTML = scene.sub.replace(/(@\w+)/g, '<span class="ltr">$1</span>');
+    title.querySelector('.s').style.opacity = easeOut((lt - 0.6) / 0.6);
+    return;
+  }
+
+  const stage = document.getElementById('stage');
+  phone.style.opacity = fade; cap.style.opacity = fade;
+  phone.style.transform = `translateY(${(1 - easeOut(lt / 0.5)) * 60}px)`;
+  cap.querySelector('.c').textContent = scene.caption;
+  cap.querySelector('.s').textContent = scene.sub;
+  document.getElementById('htitle').textContent = scene.chat.title;
+  document.getElementById('hsub').textContent = scene.chat.subtitle || '';
+
+  const data = prepare(scene);
+  const chat = document.getElementById('chat');
+  // detach everything, then attach what is visible now
+  [...chat.children].forEach((c) => chat.removeChild(c));
+  data.order.forEach((id) => {
+    const vs = data.versions.filter((v) => v.id === id && v.t <= lt);
+    if (!vs.length) return;
+    const cur = vs.at(-1), prev = vs.length > 1 ? vs.at(-2) : null;
+    const p = easeOut((lt - cur.t) / 0.4);
+    const h = prev ? prev.h + (cur.h - prev.h) * p : cur.h * p;
+    cur.wrap.style.height = Math.max(0, h) + 'px';
+    cur.wrap.style.opacity = prev ? 0.35 + 0.65 * p : clamp(p * 1.6);
+    cur.wrap.style.transform = prev ? 'none' : `translateY(${(1 - p) * 30}px)`;
+    chat.appendChild(cur.wrap);
+  });
+
+  // inline results panel
+  const panel = document.getElementById('panel');
+  const pe = data.panels.find((e) => lt >= e.t && lt < e.until);
+  if (pe) {
+    const p = easeOut((lt - pe.t) / 0.4);
+    panel.style.display = 'block';
+    panel.style.opacity = p; panel.style.transform = `translateY(${(1 - p) * 40}px)`;
+    panel.innerHTML = '<div class="open">🛍 باز کردن فروشگاه</div>' + pe.items.map((it) => `<div class="item" data-label="${it.title}">${it.title}<div class="d">${it.desc}</div></div>`).join('');
+  } else panel.style.display = 'none';
+
+  // taps
+  document.querySelectorAll('.pressed').forEach((e) => e.classList.remove('pressed'));
+  const te = (scene.events || []).filter((e) => e.type === 'tap').find((e) => lt >= e.t - 0.35 && lt < e.t + 0.45);
+  if (te) {
+    const target = [...document.querySelectorAll('#phone .btn, #phone .item')].reverse().find((b) => b.dataset.label === te.label);
+    if (target) {
+      const pr = phone.getBoundingClientRect(), br = target.getBoundingClientRect();
+      const cx = br.left + br.width / 2, cy = br.top + br.height / 2;
+      const k = (lt - (te.t - 0.35)) / 0.8; // 0..1
+      const approach = easeOut(k / 0.45);
+      const fx = cx + (1 - approach) * 90, fy = cy + (1 - approach) * 200;
+      finger.style.left = (fx - 20) + 'px'; finger.style.top = (fy - 20) + 'px';
+      finger.style.opacity = fade * clamp(k * 6) * (1 - clamp((k - 0.85) * 7));
+      if (lt >= te.t) {
+        target.classList.add('pressed');
+        const r = clamp((lt - te.t) / 0.45);
+        tap.style.left = (cx - pr.left - 12) + 'px'; tap.style.top = (cy - pr.top - 12) + 'px';
+        tap.style.opacity = 1 - r; tap.style.transform = `scale(${0.4 + r * 1.4})`;
+      }
+    }
+  }
+};
+</script>
+</body>
+</html>
