@@ -1,4 +1,4 @@
 node_modules
 frames
-out/
+out/*.png
 render.log
