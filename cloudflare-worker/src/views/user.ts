@@ -234,7 +234,10 @@ export const checkoutPrompts = {
     ...stepView(n, total, '👤 لطفاً <b>نام</b> خود را بفرستید:', 'علی محمدی'),
     ...(telegramName.trim() && { keyboard: inline([button(`✅ همان «${truncate(telegramName, 24)}»`, CB.useTelegramName, 'primary')], cancelCheckoutRow()) }),
   }),
-  badName: (): View => ({ text: sections('⚠️ لطفاً <b>نام</b> خود را بفرستید.', hint('مثال: علی')), keyboard: inline(cancelCheckoutRow()) }),
+  badName: (telegramName = ''): View => ({
+    text: sections('⚠️ لطفاً <b>نام</b> خود را بفرستید.', hint('مثال: علی')),
+    keyboard: inline(...(telegramName.trim() ? [[button(`✅ همان «${truncate(telegramName, 24)}»`, CB.useTelegramName, 'primary')]] : []), cancelCheckoutRow()),
+  }),
   address: (n: number, total: number) => stepView(n, total, '📍 لطفاً <b>آدرس</b> خود را بفرستید:', 'تهران، خیابان آزادی، پلاک ۱۲'),
   phone: (n: number, total: number) => stepView(n, total, '📱 لطفاً <b>شماره موبایل</b> خود را بفرستید:', '09123456789'),
   badPhone: (): View => ({ text: sections('⚠️ شماره موبایل معتبر نیست.', hint('شماره باید ۱۱ رقم باشد و با ۰۹ شروع شود. مثال: 09123456789')), keyboard: inline(cancelCheckoutRow()) }),

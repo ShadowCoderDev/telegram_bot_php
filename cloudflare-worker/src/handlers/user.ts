@@ -378,7 +378,7 @@ async function checkoutStep(ctx: BotContext, s: Session<v.CheckoutData>, d: Deps
   switch (s.step) {
     case 'name': {
       // Any name will do – just "علی" too; nobody should be sent back for a missing surname.
-      if (!text || text.startsWith('/') || charCount(text) < 2) return ctx.reply(v.checkoutPrompts.badName());
+      if (!text || text.startsWith('/') || charCount(text) < 2) return ctx.reply(v.checkoutPrompts.badName(ctx.firstName));
       if (charCount(text) > LIMITS.name) return ctx.reply(v.checkoutPrompts.tooLong(LIMITS.name));
       return nextStep(ctx, d, { ...s.data, firstName: text, lastName: '' }, 'name');
     }
