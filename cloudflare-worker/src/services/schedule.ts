@@ -32,6 +32,8 @@ export interface Schedule {
   capacity: number;
   lead_minutes: number;
   horizon_days: number;
+  /** Reminder to the customer this long before the slot; 0 = none. */
+  remind_minutes: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -214,9 +216,9 @@ export type Preset = Omit<Schedule, 'category_id' | 'enabled'> & { title: string
 
 /** One tap sets a sensible schedule; the seller adjusts whatever differs. */
 export const PRESETS: Record<PresetKey, Preset> = {
-  food: { title: '🍽 تحویل غذا و سفارش روزانه', label: 'زمان تحویل', days: ALL_DAYS, times: '12:00,13:00,14:00,18:00,19:00,20:00,21:00', capacity: 10, lead_minutes: 60, horizon_days: 3 },
-  visit: { title: '🩺 نوبت‌دهی (پزشک، مشاوره، آرایشگاه)', label: 'زمان نوبت', days: DAYS_SAT_WED, times: '16:00,16:30,17:00,17:30,18:00,18:30,19:00,19:30', capacity: 1, lead_minutes: 120, horizon_days: 14 },
-  pickup: { title: '📦 دریافت حضوری کالا (کتاب، سفارش)', label: 'زمان دریافت', days: DAYS_SAT_THU, times: '10:00,11:00,12:00,13:00,14:00,15:00,16:00,17:00', capacity: 5, lead_minutes: 240, horizon_days: 7 },
+  food: { title: '🍽 تحویل غذا و سفارش روزانه', label: 'زمان تحویل', days: ALL_DAYS, times: '12:00,13:00,14:00,18:00,19:00,20:00,21:00', capacity: 10, lead_minutes: 60, horizon_days: 3, remind_minutes: 60 },
+  visit: { title: '🩺 نوبت‌دهی (پزشک، مشاوره، آرایشگاه)', label: 'زمان نوبت', days: DAYS_SAT_WED, times: '16:00,16:30,17:00,17:30,18:00,18:30,19:00,19:30', capacity: 1, lead_minutes: 120, horizon_days: 14, remind_minutes: 180 },
+  pickup: { title: '📦 دریافت حضوری کالا (کتاب، سفارش)', label: 'زمان دریافت', days: DAYS_SAT_THU, times: '10:00,11:00,12:00,13:00,14:00,15:00,16:00,17:00', capacity: 5, lead_minutes: 240, horizon_days: 7, remind_minutes: 120 },
 };
 
 /* ------------------------------------------------------------------ */

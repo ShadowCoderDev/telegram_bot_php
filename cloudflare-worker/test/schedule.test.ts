@@ -9,7 +9,7 @@ const NOW = Date.UTC(2026, 9, 1, 6, 30) / 1000;
 const TODAY = dayNo(NOW);
 
 const schedule = (over: Partial<Schedule> = {}): Schedule => ({
-  category_id: 1, enabled: 1, label: 'زمان نوبت', days: ALL_DAYS, times: '10:00,12:00,16:00', capacity: 0, lead_minutes: 0, horizon_days: 3, ...over,
+  category_id: 1, enabled: 1, label: 'زمان نوبت', days: ALL_DAYS, times: '10:00,12:00,16:00', capacity: 0, lead_minutes: 0, horizon_days: 3, remind_minutes: 0, ...over,
 });
 const open = (taken: [number, number][] = [], closed: number[] = []) => ({ now: NOW, closed: new Set(closed), taken: new Map(taken) });
 

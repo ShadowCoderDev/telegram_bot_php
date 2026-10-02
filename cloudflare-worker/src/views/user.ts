@@ -2,7 +2,7 @@ import type { Category, Faq, Order, OrderLine, Product } from '../db/models';
 import { MAX_QTY, cartTotal, type StockProblem } from '../services/CartService';
 import { STATUS_FA } from '../services/orderStatus';
 import { backRow, button, inline, replyKeyboard } from '../telegram/keyboard';
-import type { View } from '../telegram/types';
+import type { InlineKeyboardButton, View } from '../telegram/types';
 import { escapeHtml as e, money, truncate } from '../utils/format';
 import { formatPersianDate } from '../utils/persian';
 import { CB } from './callbacks';
@@ -10,7 +10,7 @@ import { cartScheduleHint, productScheduleHint, slotLines } from './slots';
 import type { OrderSlotInfo, ScheduledCategory } from '../db/schedule';
 import type { CheckoutField } from '../services/checkoutFields';
 import type { Schedule } from '../services/schedule';
-import { CANCEL_HINT, HR, contactLines, expandable, fa, heading, hint, itemsWithTotal, progress, quote, sections, toman } from './common';
+import { HR, contactLines, expandable, fa, heading, hint, itemsWithTotal, progress, quote, sections, toman } from './common';
 
 const homeRow = (label = '🏠 منوی اصلی') => backRow(CB.home, label);
 
@@ -217,22 +217,30 @@ export const supportView = (support: string): View => ({
   keyboard: inline(homeRow()),
 });
 
+/** A short message that never leaves the customer stuck: always a way back. */
+export const notice = (text: string, ...extra: InlineKeyboardButton[][]): View => ({ text, keyboard: inline(...extra, homeRow()) });
+
 /* ---------- checkout ---------- */
 
 /** Step `n` of `total` (the enabled checkout fields, then payment). */
 export const stepView = (n: number, total: number, body: string, example?: string): View => ({
-  text: sections(`${heading('🧾', 'تکمیل خرید')}\n${progress(n, total)}`, body, example && hint(`مثال: ${example}`), CANCEL_HINT),
+  text: sections(`${heading('🧾', 'تکمیل خرید')}\n${progress(n, total)}`, body, example && hint(`مثال: ${example}`)),
+  keyboard: inline(cancelCheckoutRow()),
 });
+const cancelCheckoutRow = () => [button('❌ انصراف از خرید', CB.cancelCheckout)];
 
 export const checkoutPrompts = {
   name: (n: number, total: number, telegramName: string): View => ({
     ...stepView(n, total, '👤 لطفاً <b>نام</b> خود را بفرستید:', 'علی محمدی'),
-    ...(telegramName.trim() && { keyboard: inline([button(`✅ همان «${truncate(telegramName, 24)}»`, CB.useTelegramName, 'primary')]) }),
+    ...(telegramName.trim() && { keyboard: inline([button(`✅ همان «${truncate(telegramName, 24)}»`, CB.useTelegramName, 'primary')], cancelCheckoutRow()) }),
   }),
-  badName: (): View => ({ text: sections('⚠️ لطفاً <b>نام</b> خود را بفرستید.', hint('مثال: علی')) }),
+  badName: (telegramName = ''): View => ({
+    text: sections('⚠️ لطفاً <b>نام</b> خود را بفرستید.', hint('مثال: علی')),
+    keyboard: inline(...(telegramName.trim() ? [[button(`✅ همان «${truncate(telegramName, 24)}»`, CB.useTelegramName, 'primary')]] : []), cancelCheckoutRow()),
+  }),
   address: (n: number, total: number) => stepView(n, total, '📍 لطفاً <b>آدرس</b> خود را بفرستید:', 'تهران، خیابان آزادی، پلاک ۱۲'),
   phone: (n: number, total: number) => stepView(n, total, '📱 لطفاً <b>شماره موبایل</b> خود را بفرستید:', '09123456789'),
-  badPhone: (): View => ({ text: sections('⚠️ شماره موبایل معتبر نیست.', hint('شماره باید ۱۱ رقم باشد و با ۰۹ شروع شود. مثال: 09123456789')) }),
+  badPhone: (): View => ({ text: sections('⚠️ شماره موبایل معتبر نیست.', hint('شماره باید ۱۱ رقم باشد و با ۰۹ شروع شود. مثال: 09123456789')), keyboard: inline(cancelCheckoutRow()) }),
   payment: (n: number, total: number, bankInfo: string, amount: number, validMinutes: number): View =>
     stepView(
       n,
@@ -250,6 +258,7 @@ export const checkoutPrompts = {
       quote('• عکس را به صورت <b>Photo</b> بفرستید\n• یا فایل تصویری (jpg / png / webp)'),
       hint('متن یا فایل‌های دیگر پذیرفته نمی‌شوند.'),
     ),
+    keyboard: inline(cancelCheckoutRow()),
   }),
   pricesChanged: (): View => ({
     text: sections(
@@ -260,7 +269,7 @@ export const checkoutPrompts = {
   slotsChanged: (): View => ({
     text: sections(heading('📅', 'زمان رزرو شما به‌روز شد'), 'مهلت نگه‌داشتن زمان انتخابی تمام شده یا تغییر کرده است. زمان را دوباره بررسی می‌کنیم؛ سپس رسید را بفرستید.'),
   }),
-  tooLong: (max: number): View => ({ text: `⚠️ متن طولانی است؛ حداکثر ${fa(max)} کاراکتر بفرستید.` }),
+  tooLong: (max: number): View => ({ text: `⚠️ متن طولانی است؛ حداکثر ${fa(max)} کاراکتر بفرستید.`, keyboard: inline(homeRow()) }),
   tooManyAwaiting: (max: number): View => ({
     text: sections(
       heading('⏳', 'سفارش‌های قبلی شما در حال بررسی است'),
@@ -275,8 +284,9 @@ export const checkoutPrompts = {
       'این عکس قبلاً برای سفارش دیگری ارسال شده است.',
       hint('لطفاً عکس رسید پرداخت همین سفارش را بفرستید.'),
     ),
+    keyboard: inline(cancelCheckoutRow()),
   }),
-  alreadyReceived: (): View => ({ text: sections('✅ رسید شما قبلاً دریافت شده است.', hint('نیازی به ارسال دوباره نیست.')) }),
+  alreadyReceived: (): View => ({ text: sections('✅ رسید شما قبلاً دریافت شده است.', hint('نیازی به ارسال دوباره نیست.')), keyboard: inline([button('✉️ سفارشات من', CB.myOrders)], homeRow()) }),
   cancelledByCartChange: (): View => ({
     text: sections(heading('ℹ️', 'سبد خرید تغییر کرد'), hint('فرایند تکمیل خرید لغو شد؛ برای ادامه دوباره «تکمیل خرید» را بزنید.')),
   }),

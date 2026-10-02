@@ -30,8 +30,8 @@ export interface AgendaEntry {
   phone: string;
 }
 
-export type ScheduleField = 'enabled' | 'label' | 'days' | 'times' | 'capacity' | 'lead_minutes' | 'horizon_days';
-const FIELDS: readonly ScheduleField[] = ['enabled', 'label', 'days', 'times', 'capacity', 'lead_minutes', 'horizon_days'];
+export type ScheduleField = 'enabled' | 'label' | 'days' | 'times' | 'capacity' | 'lead_minutes' | 'horizon_days' | 'remind_minutes';
+const FIELDS: readonly ScheduleField[] = ['enabled', 'label', 'days', 'times', 'capacity', 'lead_minutes', 'horizon_days', 'remind_minutes'];
 
 /** Orders that take a slot for good (a pending order only holds it for a while). */
 const TAKEN_STATUS = "('payed','approved','sending')";
@@ -63,7 +63,7 @@ export class ScheduleRepository extends Repository {
   /** The schedule that applies to customers now: scheduling on, this schedule on. */
   active(categoryId: number) {
     return this.first<ScheduledCategory>(
-      `SELECT cs.category_id, cs.enabled, cs.label, cs.days, cs.times, cs.capacity, cs.lead_minutes, cs.horizon_days, c.name, c.icon
+      `SELECT cs.category_id, cs.enabled, cs.label, cs.days, cs.times, cs.capacity, cs.lead_minutes, cs.horizon_days, cs.remind_minutes, c.name, c.icon
          FROM category_schedules cs JOIN categories c ON c.shop_id = cs.shop_id AND c.id = cs.category_id
         WHERE cs.shop_id = ?1 AND cs.category_id = ?2 AND cs.enabled = 1 AND cs.times != '' AND ${MASTER_ON}`,
       categoryId,
@@ -74,7 +74,7 @@ export class ScheduleRepository extends Repository {
   async list(): Promise<{ category_id: number; name: string; icon: string; schedule: Schedule | null }[]> {
     const rows = await this.all<Schedule & { name: string; icon: string; configured: number }>(
       `SELECT c.id AS category_id, c.name, c.icon, cs.category_id IS NOT NULL AS configured,
-              cs.enabled, cs.label, cs.days, cs.times, cs.capacity, cs.lead_minutes, cs.horizon_days
+              cs.enabled, cs.label, cs.days, cs.times, cs.capacity, cs.lead_minutes, cs.horizon_days, cs.remind_minutes
          FROM categories c LEFT JOIN category_schedules cs ON cs.shop_id = c.shop_id AND cs.category_id = c.id
         WHERE c.shop_id = ?1 ORDER BY c.id`,
     );
@@ -84,11 +84,12 @@ export class ScheduleRepository extends Repository {
   /** Creates or replaces a category's schedule; false when the category isn't this shop's. */
   async save(categoryId: number, s: Omit<Schedule, 'category_id'>): Promise<boolean> {
     const r = await this.run(
-      `INSERT INTO category_schedules (shop_id, category_id, enabled, label, days, times, capacity, lead_minutes, horizon_days)
-       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9 WHERE EXISTS (SELECT 1 FROM categories WHERE shop_id = ?1 AND id = ?2)
+      `INSERT INTO category_schedules (shop_id, category_id, enabled, label, days, times, capacity, lead_minutes, horizon_days, remind_minutes)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10 WHERE EXISTS (SELECT 1 FROM categories WHERE shop_id = ?1 AND id = ?2)
        ON CONFLICT (shop_id, category_id) DO UPDATE SET enabled = excluded.enabled, label = excluded.label, days = excluded.days,
-         times = excluded.times, capacity = excluded.capacity, lead_minutes = excluded.lead_minutes, horizon_days = excluded.horizon_days`,
-      categoryId, s.enabled, s.label, s.days, s.times, s.capacity, s.lead_minutes, s.horizon_days,
+         times = excluded.times, capacity = excluded.capacity, lead_minutes = excluded.lead_minutes, horizon_days = excluded.horizon_days,
+         remind_minutes = excluded.remind_minutes`,
+      categoryId, s.enabled, s.label, s.days, s.times, s.capacity, s.lead_minutes, s.horizon_days, s.remind_minutes,
     );
     return r.meta.changes > 0;
   }
@@ -106,7 +107,7 @@ export class ScheduleRepository extends Repository {
   /** The schedules an order has to pick a slot for: one per scheduled category among its products. */
   requiredFor(orderId: number) {
     return this.all<ScheduledCategory>(
-      `SELECT cs.category_id, cs.enabled, cs.label, cs.days, cs.times, cs.capacity, cs.lead_minutes, cs.horizon_days, c.name, c.icon
+      `SELECT cs.category_id, cs.enabled, cs.label, cs.days, cs.times, cs.capacity, cs.lead_minutes, cs.horizon_days, cs.remind_minutes, c.name, c.icon
          FROM category_schedules cs JOIN categories c ON c.shop_id = cs.shop_id AND c.id = cs.category_id
         WHERE cs.shop_id = ?1 AND cs.enabled = 1 AND cs.times != '' AND ${MASTER_ON}
           AND cs.category_id IN (SELECT p.category_id FROM order_items oi JOIN products p ON p.id = oi.product_id AND p.shop_id = ?1

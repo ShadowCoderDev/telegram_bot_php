@@ -8,6 +8,7 @@ import { getPlatformProxy } from 'wrangler';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { emptyUsage, meterD1 } from '../src/db/meter';
 import { ShopRepository } from '../src/db/platform';
+import { ReminderRepository } from '../src/db/reminders';
 import { ScheduleRepository } from '../src/db/schedule';
 import { CategoryRepository, FaqRepository, OrderRepository, ProductRepository, SessionRepository, SettingsRepository, UserRepository } from '../src/db/repositories';
 import { PlatformUsageRepository, UNCAPPED, UsageRepository, addInline, addPendingUsage, utcDay } from '../src/db/usage';
@@ -270,8 +271,8 @@ describe('booking a time slot', () => {
 
   it('applies scheduling only while the shop switch and the schedule are on', async () => {
     await db.prepare("DELETE FROM settings WHERE shop_id = 1 AND setting_key = 'scheduling_enabled'").run();
-    expect(await schedules.save(1, { enabled: 1, label: 'x', days: 127, times: '10:00', capacity: 0, lead_minutes: 0, horizon_days: 7 })).toBe(true);
-    expect(await schedules.save(999, { enabled: 1, label: 'x', days: 127, times: '10:00', capacity: 0, lead_minutes: 0, horizon_days: 7 })).toBe(false); // not this shop's category
+    expect(await schedules.save(1, { enabled: 1, label: 'x', days: 127, times: '10:00', capacity: 0, lead_minutes: 0, horizon_days: 7, remind_minutes: 0 })).toBe(true);
+    expect(await schedules.save(999, { enabled: 1, label: 'x', days: 127, times: '10:00', capacity: 0, lead_minutes: 0, horizon_days: 7, remind_minutes: 0 })).toBe(false); // not this shop's category
     expect(await schedules.active(1)).toBeNull(); // the shop switch is off
     await schedules.setEnabled(true);
     expect((await schedules.active(1))?.name).toBe((await new CategoryRepository(db, 1).find(1))!.name);
@@ -284,6 +285,58 @@ describe('booking a time slot', () => {
     // Another shop sees none of it.
     expect(await new ScheduleRepository(db, 2).find(1)).toBeNull();
     await schedules.remove(1);
+  });
+});
+
+describe('appointment reminders', () => {
+  const NOW = 1_950_000_000;
+  const reminders = () => new ReminderRepository(db);
+  const book = async (status: string, slotAt: number, remind = 60) => {
+    await db.prepare('DELETE FROM category_schedules WHERE shop_id = 1 AND category_id = 1').run();
+    await db
+      .prepare("INSERT INTO category_schedules (shop_id, category_id, label, days, times, remind_minutes) VALUES (1, 1, 'زمان نوبت', 127, '10:00', ?)")
+      .bind(remind)
+      .run();
+    const id = await seedOrder(status);
+    await db.prepare('INSERT INTO order_slots (shop_id, order_id, category_id, slot_at) VALUES (1, ?, 1, ?)').bind(id, slotAt).run();
+    return id;
+  };
+  const ids = async (now: number) => (await reminders().due(now, 50)).map((r) => r.order_id);
+
+  beforeAll(async () => {
+    await db.prepare("UPDATE shops SET status = 'active', plan = 'trial', paid_until = ? WHERE id = 1").bind(NOW + 10 * 86_400).run();
+  });
+
+  it('is due only inside the reminder window of a paid booking', async () => {
+    const id = await book('approved', NOW + 1800); // 30 minutes away, reminder 60 minutes before
+    expect(await ids(NOW)).toContain(id);
+    expect(await ids(NOW + 1800)).not.toContain(id); // the slot has started
+    const far = await book('approved', NOW + 3 * 3600);
+    expect(await ids(NOW)).not.toContain(far); // reminder time not reached yet
+    expect(await ids(NOW + 2 * 3600 + 60)).toContain(far);
+  });
+
+  it('skips pending orders, switched-off reminders and bookings made inside the window', async () => {
+    const [pending, off] = [await book('pending', NOW + 1800), await book('payed', NOW + 1800, 0)];
+    expect(await ids(NOW)).not.toContain(pending);
+    expect(await ids(NOW)).not.toContain(off);
+    const late = await book('payed', NOW + 1800);
+    await db.prepare('UPDATE orders SET time = ? WHERE id = ?').bind(NOW - 60, late).run(); // booked 30 minutes before a 60-minute reminder point
+    expect(await ids(NOW)).not.toContain(late);
+  });
+
+  it('claims a reminder for one sender only, and forgets it for a lapsed shop', async () => {
+    const id = await book('sending', NOW + 1800);
+    const results = await Promise.all([reminders().claim(id, 1, NOW), reminders().claim(id, 1, NOW)]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(await ids(NOW)).not.toContain(id);
+    const other = await book('approved', NOW + 1800);
+    await db.prepare("UPDATE shops SET paid_until = ? WHERE id = 1").bind(NOW - 30 * 86_400).run();
+    expect(await ids(NOW)).not.toContain(other);
+    await db.prepare("UPDATE shops SET paid_until = ? WHERE id = 1").bind(NOW + 10 * 86_400).run();
+    expect(await ids(NOW)).toContain(other);
+    await db.prepare("UPDATE shops SET plan = 'owner', paid_until = 0 WHERE id = 1").run(); // the owner's own shop never lapses
+    expect(await ids(NOW)).toContain(other);
   });
 });
 

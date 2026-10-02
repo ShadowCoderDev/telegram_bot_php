@@ -22,8 +22,10 @@
   // Migration files are bundled as text so the Worker can apply them itself (src/db/migrate.ts).
   "rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }],
 
-  // Hourly: subscription expiry reminders to sellers (src/platform.ts → sendReminders).
-  "triggers": { "crons": ["0 * * * *"] }
+  // On the hour: subscription expiry reminders to sellers, retention purge, capacity alarm.
+  // At :15, :30, :45: appointment reminders to customers (src/reminders.ts). Keep the second
+  // string in step with QUARTER_CRON in src/index.ts.
+  "triggers": { "crons": ["0 * * * *", "15,30,45 * * * *"] }
 
   // Optional receipt archive in R2 (needs R2 enabled on the account, which asks for a payment method):
   // "r2_buckets": [{ "binding": "FILES", "bucket_name": "shop-files" }]

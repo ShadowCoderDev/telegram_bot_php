@@ -5,6 +5,7 @@ import { addPendingUsage } from './db/usage';
 import { createDeps } from './deps';
 import type { Env } from './env';
 import { checkCapacity, createPlatformBot, createPlatformDeps, purgeLapsedShops, sendReminders } from './platform';
+import { REMINDERS_HOURLY, sendAppointmentReminders } from './reminders';
 import { FileStore } from './services/FileStore';
 import { statusPage } from './setup';
 import { HOOK_VERSION, TelegramClient } from './telegram/TelegramClient';
@@ -20,11 +21,15 @@ import { sameSecret } from './crypto';
  *   POST /platform       the platform bot (create / renew shops, owner panel)
  *   GET  /               status page; also connects the webhooks (first-time setup)
  *   GET  /files/<key>    public product images from R2 (only when R2 is configured)
- *   cron (hourly)        expiry reminders, deleting lapsed shops' data, capacity alarm
+ *   cron (quarter-hourly) appointment reminders to customers; on the hour also: expiry reminders to
+ *                        sellers, deleting lapsed shops' data, capacity alarm
  *
  * Every D1 query goes through a meter; what a request cost is added to its bot's daily usage
  * (src/db/usage.ts) – the numbers behind the daily caps and the capacity page.
  */
+/** The wrangler.jsonc trigger that runs only the appointment reminders. */
+const QUARTER_CRON = '15,30,45 * * * *';
+
 export default {
   async fetch(request: Request, rawEnv: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -63,11 +68,15 @@ export default {
     return new Response('Not found', { status: 404 });
   },
 
-  async scheduled(_controller: ScheduledController, rawEnv: Env): Promise<void> {
+  async scheduled(controller: ScheduledController, rawEnv: Env): Promise<void> {
     const usage = emptyUsage();
     const env: Env = { ...rawEnv, DB: meterD1(rawEnv.DB, usage) };
     try {
       await ensureSchema(env.DB);
+      // Two triggers: on the hour (everything) and at :15/:30/:45 (appointment reminders only).
+      const hourly = controller.cron !== QUARTER_CRON;
+      await sendAppointmentReminders(env, Math.floor(Date.now() / 1000), hourly ? REMINDERS_HOURLY : undefined);
+      if (!hourly) return;
       const d = createPlatformDeps(env, '');
       await sendReminders(d);
       await purgeLapsedShops(d);

@@ -19,10 +19,11 @@ import { HOOK_VERSION, TelegramApiError, TelegramClient } from './telegram/Teleg
 import type { Update } from './telegram/types';
 import { shopClaimCode } from './tenancy';
 import { formatPersianDate, parseAmount, tehranDayAndMonthStart } from './utils/persian';
-import { CANCEL_HINT, heading, num, sections } from './views/common';
+import { heading, num, sections } from './views/common';
 import * as pv from './views/platform';
 import { LEARN, LESSONS, lessonPhotoKey, lessonView, tutorialIndex } from './views/tutorial';
 
+import { button } from './telegram/keyboard';
 const { PCB } = pv;
 const PLATFORM_FULL_TEXT = '⏳ ظرفیت امروز ربات تکمیل شده است.\nلطفاً بعد از ساعت ۳:۳۰ بامداد دوباره سر بزنید. 🙏';
 const now = () => Math.floor(Date.now() / 1000);
@@ -214,11 +215,15 @@ function registerSellerRoutes(router: Router, d: PlatformDeps): Router {
       await ctx.reply({ text: '✅ لغو شد.' });
       await home(ctx);
     })
+    .callback(PCB.cancel, async (ctx) => {
+      await d.sessions.clear(ctx.chatId);
+      await home(ctx);
+    })
     .text(/^\/claim(?:\s+(\S+))?$/, async (ctx, [code]) => {
       // The platform owner becomes platform admin with MASTER_KEY.
-      if (d.masterKey.length < 32 || !code || !(await sameSecret(code, d.masterKey))) return ctx.reply({ text: '❌ کد اشتباه است.' });
+      if (d.masterKey.length < 32 || !code || !(await sameSecret(code, d.masterKey))) return ctx.reply(pv.notice('❌ کد اشتباه است.'));
       await d.settings.addAdmin(ctx.chatId);
-      await ctx.reply({ text: '✅ شما مدیر پلتفرم شدید. /start را بزنید.' });
+      await ctx.reply(pv.notice('✅ شما مدیر پلتفرم شدید. /start را بزنید.'));
     })
     .text(['/help', '/learn'], (ctx) => ctx.render(tutorialIndex()))
     .callback(LEARN.index, (ctx) => ctx.render(tutorialIndex()))
@@ -232,7 +237,7 @@ function registerSellerRoutes(router: Router, d: PlatformDeps): Router {
     })
     .callback(PCB.support, async (ctx) => ctx.render(pv.supportView(await d.settings.get('support'))))
     .callback(PCB.newShop, async (ctx) => {
-      if (!d.masterKey) return ctx.reply({ text: '⚠️ پلتفرم هنوز کامل راه‌اندازی نشده (MASTER_KEY).' });
+      if (!d.masterKey) return ctx.reply(pv.notice('⚠️ پلتفرم هنوز کامل راه‌اندازی نشده (MASTER_KEY).'));
       await d.sessions.set(ctx.chatId, FLOW.newShop, 'token');
       await ctx.render(pv.newShopInstructions());
     })
@@ -243,7 +248,7 @@ function registerSellerRoutes(router: Router, d: PlatformDeps): Router {
       const months = Number(rawMonths);
       if (!shop || !RENEW_OPTIONS.includes(months as (typeof RENEW_OPTIONS)[number])) return shops(ctx);
       if ((await d.payments.pendingCountForShop(shop.id)) > 0) {
-        return ctx.reply({ text: '⏳ یک پرداخت این فروشگاه هنوز در حال بررسی است؛ بعد از بررسی آن دوباره اقدام کنید.' });
+        return ctx.reply(pv.notice('⏳ یک پرداخت این فروشگاه هنوز در حال بررسی است؛ بعد از بررسی آن دوباره اقدام کنید.', [button('🏪 فروشگاه من', PCB.shop(shop.id))]));
       }
       const amount = (await price(d)) * months;
       await d.sessions.set(ctx.chatId, FLOW.renew, 'receipt', { shopId: shop.id, months, amount });
@@ -253,7 +258,7 @@ function registerSellerRoutes(router: Router, d: PlatformDeps): Router {
       const shop = await ownedShop(d, ctx, Number(id));
       if (!shop) return shops(ctx);
       await d.sessions.set(ctx.chatId, FLOW.changeToken, 'token', { shopId: shop.id });
-      await ctx.reply({ text: sections(heading('🔑', `توکن جدید @${shop.bot_username}`), 'اگر توکن را در @BotFather عوض کرده‌اید، توکن جدید <b>همان ربات</b> را بفرستید:', CANCEL_HINT) });
+      await ctx.reply(pv.prompt(sections(heading('🔑', `توکن جدید @${shop.bot_username}`), 'اگر توکن را در @BotFather عوض کرده‌اید، توکن جدید <b>همان ربات</b> را بفرستید:')));
     })
     .callback(/^p:hook:(\d+)$/, async (ctx, [id]) => {
       const shop = await ownedShop(d, ctx, Number(id));
@@ -261,9 +266,9 @@ function registerSellerRoutes(router: Router, d: PlatformDeps): Router {
       try {
         await d.botClient(await decryptToken(shop.bot_token_enc, d.masterKey)).setWebhook(`${d.origin}/webhook/${shop.id}`, shop.webhook_secret);
         await d.shops.setHookVersion(shop.id, HOOK_VERSION);
-        await ctx.reply({ text: '✅ ربات دوباره به پلتفرم وصل شد.' });
+        await ctx.reply(pv.notice('✅ ربات دوباره به پلتفرم وصل شد.', [button('🏪 فروشگاه من', PCB.shop(shop.id))]));
       } catch {
-        await ctx.reply({ text: '❌ اتصال ناموفق بود. اگر توکن را عوض کرده‌اید، از «🔑 تغییر توکن» استفاده کنید.' });
+        await ctx.reply(pv.notice('❌ اتصال ناموفق بود. اگر توکن را عوض کرده‌اید، از «🔑 تغییر توکن» استفاده کنید.', [button('🔑 تغییر توکن', PCB.changeToken(shop.id))]));
       }
     })
     .callback(/^p:del:(\d+)$/, async (ctx, [id]) => {
@@ -287,7 +292,7 @@ function registerSellerRoutes(router: Router, d: PlatformDeps): Router {
         if (ctx.update.message) await d.tg.deleteMessage(ctx.chatId, ctx.update.message.message_id).catch(() => {});
         if (s.flow === FLOW.newShop) {
           const result = await provisionShop(d, ctx.chatId, token);
-          if (!result.ok) return ctx.reply({ text: sections(PROVISION_ERRORS[result.reason], CANCEL_HINT) });
+          if (!result.ok) return ctx.reply(pv.prompt(sections(PROVISION_ERRORS[result.reason])));
           await d.sessions.clear(ctx.chatId);
           return ctx.reply(pv.shopCreated(result.shop, await trialDays(d)));
         }
@@ -301,26 +306,26 @@ function registerSellerRoutes(router: Router, d: PlatformDeps): Router {
 async function changeToken(ctx: BotContext, d: PlatformDeps, shopId: number, token: string): Promise<void> {
   const shop = await ownedShop(d, ctx, shopId);
   if (!shop) return void (await d.sessions.clear(ctx.chatId));
-  if (!TOKEN_FORMAT.test(token)) return ctx.reply({ text: sections(PROVISION_ERRORS.format, CANCEL_HINT) });
+  if (!TOKEN_FORMAT.test(token)) return ctx.reply(pv.prompt(sections(PROVISION_ERRORS.format)));
   const bot = d.botClient(token);
   const me = await bot.call<{ id: number; username?: string }>('getMe').catch(() => null);
-  if (!me) return ctx.reply({ text: sections(PROVISION_ERRORS.invalid, CANCEL_HINT) });
-  if (me.id !== shop.bot_id) return ctx.reply({ text: sections('⚠️ این توکن مال ربات دیگری است؛ توکن جدید همان ربات فروشگاه را بفرستید.', CANCEL_HINT) });
+  if (!me) return ctx.reply(pv.prompt(sections(PROVISION_ERRORS.invalid)));
+  if (me.id !== shop.bot_id) return ctx.reply(pv.prompt(sections('⚠️ این توکن مال ربات دیگری است؛ توکن جدید همان ربات فروشگاه را بفرستید.')));
   await d.shops.updateToken(shop.id, await encryptToken(token, d.masterKey), me.username ?? shop.bot_username);
   await bot.setWebhook(`${d.origin}/webhook/${shop.id}`, shop.webhook_secret);
   await d.shops.setHookVersion(shop.id, HOOK_VERSION);
   await d.sessions.clear(ctx.chatId);
-  await ctx.reply({ text: '✅ توکن به‌روز شد و ربات دوباره وصل شد.' });
+  await ctx.reply(pv.notice('✅ توکن به‌روز شد و ربات دوباره وصل شد.', [button('🏪 فروشگاه من', PCB.shop(shop.id))]));
 }
 
 async function receiveReceipt(ctx: BotContext, d: PlatformDeps, data: { shopId: number; months: number; amount: number }): Promise<void> {
   const image = ctx.image;
-  if (!image) return ctx.reply({ text: sections('📸 لطفاً <b>عکس رسید</b> واریز را بفرستید.', CANCEL_HINT) });
+  if (!image) return ctx.reply(pv.prompt(sections('📸 لطفاً <b>عکس رسید</b> واریز را بفرستید.')));
   const shop = await ownedShop(d, ctx, data.shopId);
   if (!shop) return void (await d.sessions.clear(ctx.chatId));
   if ((await d.payments.pendingCountForShop(shop.id)) > 0) {
     await d.sessions.clear(ctx.chatId);
-    return ctx.reply({ text: '⏳ یک پرداخت این فروشگاه هنوز در حال بررسی است.' });
+    return ctx.reply(pv.notice('⏳ یک پرداخت این فروشگاه هنوز در حال بررسی است.', [button('🏪 فروشگاه من', PCB.shop(shop.id))]));
   }
   const created = await d.payments.create({
     shopId: shop.id,
@@ -330,7 +335,7 @@ async function receiveReceipt(ctx: BotContext, d: PlatformDeps, data: { shopId: 
     fileId: image.fileId,
     uniqueId: image.uniqueId,
   });
-  if (!created.ok) return ctx.reply({ text: sections('⚠️ این رسید قبلاً استفاده شده است. رسید همین پرداخت را بفرستید.', CANCEL_HINT) });
+  if (!created.ok) return ctx.reply(pv.prompt(sections('⚠️ این رسید قبلاً استفاده شده است. رسید همین پرداخت را بفرستید.')));
   await d.sessions.clear(ctx.chatId);
   await ctx.reply(pv.paymentReceived());
   const payment = (await d.payments.find(created.id))!;
@@ -361,7 +366,7 @@ function registerAdminRoutes(router: Router, d: PlatformDeps): Router {
   const capacity = async (ctx: BotContext) => ctx.render(pv.capacityView(await capacityReport(d.env.DB, await capacitySettings(d.settings), now())));
   const capacitySettingsPage = async (ctx: BotContext) => ctx.render(pv.capacitySettingsView(await d.settings.getMany(CAPACITY_KEYS)));
   const notifyOwner = (shop: ShopRow, text: string) =>
-    shop.owner_chat_id ? d.tg.sendMessage(shop.owner_chat_id, text).catch((err) => console.error('notify seller', err)) : undefined;
+    shop.owner_chat_id ? d.tg.sendMessage(shop.owner_chat_id, text, pv.notice(text).keyboard).catch((err) => console.error('notify seller', err)) : undefined;
 
   return router
     .text('/start', root)
@@ -422,7 +427,7 @@ function registerAdminRoutes(router: Router, d: PlatformDeps): Router {
     // Screenshots for the tutorial: the platform owner sends one per lesson.
     .callback(/^pa:learnpic:(\d+)$/, async (ctx, [n]) => {
       await d.sessions.set(ctx.chatId, FLOW.lessonPhoto, 'photo', { lesson: Number(n) });
-      await ctx.reply({ text: sections(`🖼 عکس (اسکرین‌شات) <b>درس ${Number(n)}</b> را بفرستید:`, CANCEL_HINT) });
+      await ctx.reply(pv.prompt(sections(`🖼 عکس (اسکرین‌شات) <b>درس ${Number(n)}</b> را بفرستید:`)));
     })
     .callback(/^pa:learnpicdel:(\d+)$/, async (ctx, [n]) => {
       await d.settings.set(lessonPhotoKey(Number(n)), '');
@@ -444,14 +449,14 @@ function registerAdminRoutes(router: Router, d: PlatformDeps): Router {
     .callback(/^pa:set:(\w+)$/, async (ctx, [key]) => {
       if (!PLATFORM_SETTING_KEYS.includes(key as PlatformSettingKey)) return;
       await d.sessions.set(ctx.chatId, FLOW.setting, 'value', { key });
-      await ctx.reply({ text: sections(pv.PLATFORM_SETTING_LABELS[key as PlatformSettingKey].prompt, CANCEL_HINT) });
+      await ctx.reply(pv.prompt(sections(pv.PLATFORM_SETTING_LABELS[key as PlatformSettingKey].prompt)));
     })
     .fallback(async (ctx) => {
       if (ctx.isCallback) return false;
       const s = await d.sessions.get<{ key: PlatformSettingKey; lesson: number }>(ctx.chatId);
       if (s?.flow === FLOW.lessonPhoto) {
         const n = s.data.lesson;
-        if (!ctx.image) return ctx.reply({ text: sections('📸 لطفاً یک <b>عکس</b> بفرستید.', CANCEL_HINT) });
+        if (!ctx.image) return ctx.reply(pv.prompt(sections('📸 لطفاً یک <b>عکس</b> بفرستید.')));
         await d.settings.set(lessonPhotoKey(n), ctx.image.fileId);
         await d.sessions.clear(ctx.chatId);
         return ctx.reply(lessonView(n, ctx.image.fileId, true));
@@ -461,23 +466,23 @@ function registerAdminRoutes(router: Router, d: PlatformDeps): Router {
       let value = text;
       if (s.data.key === 'monthly_price') {
         const n = parseAmount(text);
-        if (n === null || n < 1000 || n > 100_000_000) return ctx.reply({ text: sections('⚠️ یک مبلغ معتبر به تومان بفرستید؛ مثل 49000', CANCEL_HINT) });
+        if (n === null || n < 1000 || n > 100_000_000) return ctx.reply(pv.prompt(sections('⚠️ یک مبلغ معتبر به تومان بفرستید؛ مثل 49000')));
         value = String(n);
       } else if (s.data.key === 'trial_days') {
         const n = parseAmount(text);
-        if (n === null || n > 30) return ctx.reply({ text: sections('⚠️ عددی بین ۰ تا ۳۰ بفرستید.', CANCEL_HINT) });
+        if (n === null || n > 30) return ctx.reply(pv.prompt(sections('⚠️ عددی بین ۰ تا ۳۰ بفرستید.')));
         value = String(n);
       } else if (s.data.key === 'retention_days') {
         const n = parseAmount(text);
-        if (n === null || n < 7 || n > 365) return ctx.reply({ text: sections('⚠️ عددی بین ۷ تا ۳۶۵ بفرستید.', CANCEL_HINT) });
+        if (n === null || n < 7 || n > 365) return ctx.reply(pv.prompt(sections('⚠️ عددی بین ۷ تا ۳۶۵ بفرستید.')));
         value = String(n);
       } else if (isCapacityKey(s.data.key)) {
         const n = parseAmount(text);
         const [min, max] = CAPACITY_RANGES[s.data.key];
-        if (n === null || n < min || n > max) return ctx.reply({ text: sections(`⚠️ عددی بین ${num(min)} و ${num(max)} بفرستید.`, CANCEL_HINT) });
+        if (n === null || n < min || n > max) return ctx.reply(pv.prompt(sections(`⚠️ عددی بین ${num(min)} و ${num(max)} بفرستید.`)));
         value = String(n);
       } else if (!text || charCount(text) > LIMITS.setting) {
-        return ctx.reply({ text: sections('⚠️ یک متن کوتاه بفرستید.', CANCEL_HINT) });
+        return ctx.reply(pv.prompt(sections('⚠️ یک متن کوتاه بفرستید.')));
       }
       await d.settings.set(s.data.key, value);
       await d.sessions.clear(ctx.chatId);
