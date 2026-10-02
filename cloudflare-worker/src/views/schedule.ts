@@ -8,7 +8,7 @@ import { backRow, button, inline } from '../telegram/keyboard';
 import type { InlineKeyboardButton, View } from '../telegram/types';
 import { escapeHtml as e } from '../utils/format';
 import { CB } from './callbacks';
-import { CANCEL_HINT, fa, heading, hint, quote, sections } from './common';
+import { fa, heading, hint, quote, sections } from './common';
 import { stepView } from './user';
 
 const A = CB.admin;
@@ -22,13 +22,15 @@ const capacityText = (n: number) => (n === 0 ? 'نامحدود' : `${fa(n)} سف
 const leadText = (minutes: number): string =>
   minutes === 0 ? 'بدون محدودیت' : minutes < 60 ? `${fa(minutes)} دقیقه قبل` : minutes % 1440 === 0 ? `${fa(minutes / 1440)} روز قبل` : `${fa(minutes / 60)} ساعت قبل`;
 const horizonText = (days: number) => `${fa(days)} روز آینده`;
+const remindText = (minutes: number): string => (minutes === 0 ? 'خاموش' : leadText(minutes));
 
 const summary = (s: Schedule): string =>
   `📅 روزها: <b>${describeDays(s.days)}</b>\n` +
   `🕒 ساعت‌ها: <b>${describeTimes(s.times)}</b>\n` +
   `👥 ظرفیت هر زمان: <b>${capacityText(s.capacity)}</b>\n` +
   `⏳ حداقل فاصله تا زمان: <b>${leadText(s.lead_minutes)}</b>\n` +
-  `📆 قابل رزرو تا: <b>${horizonText(s.horizon_days)}</b>`;
+  `📆 قابل رزرو تا: <b>${horizonText(s.horizon_days)}</b>\n` +
+  `🔔 یادآوری به مشتری: <b>${remindText(s.remind_minutes)}</b>`;
 
 export interface ScheduleListItem {
   category_id: number;
@@ -100,7 +102,8 @@ export const scheduleEditor = (c: { id: number; name: string; icon: string }, s:
     keyboard: inline(
       [button('📅 روزها', A.scheduleDays(c.id)), button('🕒 ساعت‌ها', A.scheduleTimes(c.id))],
       [button('👥 ظرفیت', A.scheduleChoices(c.id, 'cap')), button('⏳ حداقل فاصله', A.scheduleChoices(c.id, 'lead'))],
-      [button('📆 تا چند روز بعد', A.scheduleChoices(c.id, 'hor')), button('🔖 عنوان', A.scheduleLabel(c.id))],
+      [button('📆 تا چند روز بعد', A.scheduleChoices(c.id, 'hor')), button('🔔 یادآوری', A.scheduleChoices(c.id, 'rem'))],
+      [button('🔖 عنوان', A.scheduleLabel(c.id))],
       [s.enabled ? button('⏸ خاموش کردن', A.scheduleEnable(c.id)) : button('▶️ روشن کردن', A.scheduleEnable(c.id), 'success'), button('🗑 حذف', A.scheduleDelete(c.id), 'danger')],
       backRow(A.schedule, '🔙 زمان‌بندی'),
     ),
@@ -135,16 +138,14 @@ export const TIMES_PROMPT = sections(
       '\n\n<b>ترکیب (با ساعت ناهار):</b>\n<code>09:00-12:00/30 15:00-18:00/30</code>',
   ),
   hint('هر زمان، شروع یک نوبت است؛ ساعتی که بازه تمام می‌شود نوبت جدید نیست.'),
-  CANCEL_HINT,
 );
 
 export const LABEL_PROMPT = sections(
   heading('🔖', 'عنوان زمان‌بندی'),
   'مشتری این عنوان را می‌بیند. مثلاً <code>زمان نوبت</code>، <code>زمان تحویل</code> یا <code>زمان دریافت</code> را بفرستید:',
-  CANCEL_HINT,
 );
 
-export type ChoiceKind = 'cap' | 'lead' | 'hor';
+export type ChoiceKind = 'cap' | 'lead' | 'hor' | 'rem';
 const CHOICES: Record<ChoiceKind, { title: string; body: string; options: [string, number][]; text: (n: number) => string; field: (s: Schedule) => number }> = {
   cap: {
     title: '👥 ظرفیت هر زمان',
@@ -166,6 +167,13 @@ const CHOICES: Record<ChoiceKind, { title: string; body: string; options: [strin
     options: [['فقط امروز', 1], ['۳ روز', 3], ['۷ روز', 7], ['۱۴ روز', 14], ['۲۱ روز', 21], ['۳۰ روز', 30]],
     text: horizonText,
     field: (s) => s.horizon_days,
+  },
+  rem: {
+    title: '🔔 یادآوری به مشتری',
+    body: 'ربات چه مدت قبل از زمان، برای مشتری یادآوری می‌فرستد؟ (فقط برای سفارش‌های تأییدشده)',
+    options: [['خاموش', 0], ['۳۰ دقیقه قبل', 30], ['۱ ساعت قبل', 60], ['۲ ساعت قبل', 120], ['۳ ساعت قبل', 180], ['۱ روز قبل', 1440]],
+    text: remindText,
+    field: (s) => s.remind_minutes,
   },
 };
 

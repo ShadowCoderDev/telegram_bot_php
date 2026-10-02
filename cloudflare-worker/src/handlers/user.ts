@@ -13,6 +13,7 @@ import { LIMITS, MAX_AWAITING_REVIEW, charCount, planLimits } from '../limits';
 import { escapeHtml } from '../utils/format';
 import { isIranMobile, toEnglishDigits } from '../utils/persian';
 import * as admin from '../views/admin';
+import { button } from '../telegram/keyboard';
 import { CB } from '../views/callbacks';
 import { heading, hint, quote, sections } from '../views/common';
 import { noSlotsAvailable, slotDayPicker, slotTaken, slotTimePicker } from '../views/schedule';
@@ -71,7 +72,7 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
   const removeItem = async (ctx: BotContext, itemId: number) => {
     const aborted = await abortCheckout(ctx.chatId, d);
     const removed = await d.cart.removeItem(await d.user(ctx), itemId);
-    if (!removed) await ctx.reply({ text: '⚠️ این آیتم در سبد خرید شما نیست.' });
+    if (!removed) await ctx.reply(v.notice('⚠️ این آیتم در سبد خرید شما نیست.'));
     if (aborted) await ctx.reply(v.checkoutPrompts.cancelledByCartChange());
     await showCart(ctx);
   };
@@ -105,15 +106,15 @@ export function registerUserRoutes(router: Router, d: Deps): Router {
         // Someone the shop owner trusts becomes an extra admin with the shop's claim code
         // (shown to the seller in the platform bot; WEBHOOK_SECRET for the owner's own shop).
         if (d.claimCode.length < MIN_CLAIM_SECRET) {
-          return ctx.reply({ text: `⚠️ کد /claim باید حداقل ${MIN_CLAIM_SECRET} کاراکتر باشد تا فعال شود.` });
+          return ctx.reply(v.notice(`⚠️ کد /claim باید حداقل ${MIN_CLAIM_SECRET} کاراکتر باشد تا فعال شود.`));
         }
-        if (!secret || !(await sameSecret(secret, d.claimCode))) return ctx.reply({ text: '❌ کد اشتباه است.' });
+        if (!secret || !(await sameSecret(secret, d.claimCode))) return ctx.reply(v.notice('❌ کد اشتباه است.'));
         const limits = planLimits(d.shop.plan);
         if ((await d.settings.claimedAdmins()).length >= limits.extraAdmins) {
-          return ctx.reply({ text: `⚠️ این فروشگاه حداکثر ${limits.extraAdmins} ادمین اضافه می‌تواند داشته باشد.` });
+          return ctx.reply(v.notice(`⚠️ این فروشگاه حداکثر ${limits.extraAdmins} ادمین اضافه می‌تواند داشته باشد.`));
         }
         await d.settings.addAdmin(ctx.chatId);
-        await ctx.reply({ text: '✅ شما ادمین این ربات شدید. برای ورود به پنل /start را بزنید.' });
+        await ctx.reply(v.notice('✅ شما ادمین این ربات شدید. برای ورود به پنل /start را بزنید.'));
       })
       .text(v.MENU.shop, showShop)
       .text(v.MENU.cart, showCart)
@@ -277,7 +278,7 @@ async function slotStepOf(ctx: BotContext, d: Deps, categoryId: number) {
   const schedule = session?.flow === CHECKOUT && session.step === `slot:${categoryId}` ? await d.schedules.active(categoryId) : null;
   if (!session || !schedule) {
     if (session?.flow === CHECKOUT && session.step === `slot:${categoryId}`) await abortCheckout(ctx.chatId, d); // its schedule is gone
-    await ctx.reply({ text: '⚠️ این مرحله دیگر معتبر نیست. از سبد خرید دوباره «تکمیل خرید» را بزنید.' });
+    await ctx.reply(v.notice('⚠️ این مرحله دیگر معتبر نیست. از سبد خرید دوباره «تکمیل خرید» را بزنید.', [button('🛒 سبد خرید', CB.cart, 'primary')]));
     return null;
   }
   return { session: session as Session<v.CheckoutData>, schedule };
@@ -452,6 +453,6 @@ async function forwardBuyerReply(ctx: BotContext, d: Deps, adminChatId: number, 
   const photo = ctx.update.message?.photo?.at(-1)?.file_id;
   if (photo) await ctx.sendTo(adminChatId, { photo, text: header + quote(escapeHtml(ctx.caption) || '📷') });
   else if (ctx.text) await ctx.sendTo(adminChatId, { text: header + quote(escapeHtml(ctx.text)) });
-  else return ctx.reply({ text: '⚠️ فقط متن یا عکس قابل ارسال است.' });
-  await ctx.reply({ text: '✅ پیام شما برای پشتیبانی ارسال شد.' });
+  else return ctx.reply(v.notice('⚠️ فقط متن یا عکس قابل ارسال است.'));
+  await ctx.reply(v.notice('✅ پیام شما برای پشتیبانی ارسال شد.', [button('📋 سفارش‌های من', CB.myOrders)]));
 }

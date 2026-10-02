@@ -35,6 +35,7 @@ beforeAll(async () => {
     port: 8795,
     inspectorPort: 9334,
     persist: '.wrangler/schedule-e2e',
+    testScheduled: true,
     vars: { BOT_TOKEN: TOKEN, WEBHOOK_SECRET: SECRET, ADMIN_CHAT_IDS: String(ADMIN), FLOOD_LIMIT: '1000' },
   });
   h.sql("INSERT INTO categories (id, shop_id, name, icon) VALUES (1, 1, 'Visits', '🩺'), (2, 1, 'Books', '📚')");
@@ -279,5 +280,33 @@ describe('order scheduling', () => {
     expect(last(SARA)).toContain('مرحله ۱ از ۴');
     expect(count('SELECT count(*) FROM order_slots')).toBeGreaterThanOrEqual(1);
     await text(SARA, '/start');
+  });
+
+  it('lets the seller choose the reminder, and reminds a booked customer once, shortly before the time', async () => {
+    await tap(ADMIN, 'a:sch:toggle'); // the previous test switched scheduling off
+    await tap(ADMIN, 'a:sch:cat:1');
+    expect(last(ADMIN)).toContain('یادآوری به مشتری: <b>۳ ساعت قبل</b>'); // the "visit" template
+    await tap(ADMIN, 'a:sch:pick:1:rem');
+    expect(data(ADMIN, 'a:sch:set:1:rem:')).toContain('a:sch:set:1:rem:0');
+    await tap(ADMIN, 'a:sch:set:1:rem:60');
+    expect(last(ADMIN)).toContain('یادآوری به مشتری: <b>۱ ساعت قبل</b>');
+    await tap(ADMIN, 'a:sch:set:1:rem:99999'); // out of range: ignored
+    expect(count('SELECT remind_minutes FROM category_schedules WHERE category_id = 1')).toBe(60);
+
+    const at = Math.floor(Date.now() / 1000) + 1800;
+    await h.offline(() => {
+      h.sql("INSERT INTO users (id, shop_id, chat_id, name) VALUES (90, 1, 55, 'Nima')");
+      h.sql("INSERT INTO orders (id, shop_id, user_id, user_chat_id, track_id, status, time) VALUES (90, 1, 90, 55, 'TRK-90', 'approved', unixepoch() - 86400)");
+      h.sql(`INSERT INTO order_slots (shop_id, order_id, category_id, slot_at) VALUES (1, 90, 1, ${at})`);
+    });
+    const cron = `http://127.0.0.1:${h.port}/__scheduled?cron=15%2C30%2C45+*+*+*+*`;
+    await fetch(cron);
+    const reminders = sent(55).filter((c) => String(c.params.text).includes('یادآوری'));
+    expect(reminders).toHaveLength(1);
+    expect(String(reminders[0]!.params.text)).toContain('TRK-90');
+    expect(String(reminders[0]!.params.text)).toContain('دقیقه دیگر');
+    expect(JSON.stringify(reminders[0]!.params.reply_markup)).toContain('orders'); // a button to the customer's orders
+    await fetch(cron);
+    expect(sent(55).filter((c) => String(c.params.text).includes('یادآوری'))).toHaveLength(1); // once only
   });
 });

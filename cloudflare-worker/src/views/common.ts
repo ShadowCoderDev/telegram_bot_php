@@ -1,7 +1,9 @@
 import type { OrderLine } from '../db/models';
 import { cartTotal } from '../services/CartService';
 import { escapeHtml as e, money } from '../utils/format';
+import type { View } from '../telegram/types';
 import { toPersianDigits } from '../utils/persian';
+import { button, inline } from '../telegram/keyboard';
 
 /*
  * Shared formatting so every screen has the same rhythm:
@@ -22,6 +24,8 @@ export const quote = (body: string): string => `<blockquote>${body.trimEnd()}</b
 export const expandable = (body: string): string => `<blockquote expandable>${body.trimEnd()}</blockquote>`;
 export const hint = (text: string): string => `<i>${text}</i>`;
 export const CANCEL_HINT = hint('✖️ برای انصراف /cancel را بفرستید.');
+/** A question the person answers by typing: always comes with a glass button to give up (same as /cancel). */
+export const withCancel = (text: string, cancelData: string, label = '✖️ انصراف'): View => ({ text, keyboard: inline([button(label, cancelData)]) });
 
 /** Joins non-empty sections with a blank line between them. */
 export const sections = (...parts: (string | false | null | undefined)[]): string => parts.filter(Boolean).join('\n\n');

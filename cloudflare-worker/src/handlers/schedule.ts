@@ -7,7 +7,7 @@ import type { Router } from '../telegram/Router';
 import type { View } from '../telegram/types';
 import { charCount } from '../limits';
 import { CB } from '../views/callbacks';
-import { CANCEL_HINT, sections } from '../views/common';
+import { prompt as adminPrompt } from '../views/admin';
 import * as v from '../views/schedule';
 
 const A = CB.admin;
@@ -17,8 +17,8 @@ const now = () => Math.floor(Date.now() / 1000);
 export const SCHEDULE_FLOW = { times: 'sched_times', label: 'sched_label' } as const;
 
 /** Value ranges accepted from the choice buttons (a forged button can't store anything else). */
-const RANGES = { cap: ['capacity', 0, 1000], lead: ['lead_minutes', 0, 14_400], hor: ['horizon_days', 1, 60] } as const;
-const MANUAL: Omit<Schedule, 'category_id'> = { enabled: 1, label: 'زمان', days: ALL_DAYS, times: '', capacity: 0, lead_minutes: 60, horizon_days: 7 };
+const RANGES = { cap: ['capacity', 0, 1000], lead: ['lead_minutes', 0, 14_400], hor: ['horizon_days', 1, 60], rem: ['remind_minutes', 0, 2880] } as const;
+const MANUAL: Omit<Schedule, 'category_id'> = { enabled: 1, label: 'زمان', days: ALL_DAYS, times: '', capacity: 0, lead_minutes: 60, horizon_days: 7, remind_minutes: 60 };
 const LABEL_MAX = 30;
 
 export function registerScheduleRoutes(router: Router, d: Deps): Router {
@@ -61,12 +61,12 @@ export function registerScheduleRoutes(router: Router, d: Deps): Router {
       const id = Number(rawId);
       if (!(await d.schedules.isEnabled()) || (await d.schedules.find(id))) return ctx.render(await editor(id));
       const p = PRESETS[key as PresetKey];
-      const fields: Omit<Schedule, 'category_id'> = key === 'manual' ? MANUAL : { enabled: 1, label: p.label, days: p.days, times: p.times, capacity: p.capacity, lead_minutes: p.lead_minutes, horizon_days: p.horizon_days };
+      const fields: Omit<Schedule, 'category_id'> = key === 'manual' ? MANUAL : { enabled: 1, label: p.label, days: p.days, times: p.times, capacity: p.capacity, lead_minutes: p.lead_minutes, horizon_days: p.horizon_days, remind_minutes: p.remind_minutes };
       if (!(await d.schedules.save(id, fields))) return ctx.render(await home());
       if (key !== 'manual') return ctx.render(await editor(id));
       await ctx.render(await editor(id));
       await d.sessions.set(ctx.chatId, SCHEDULE_FLOW.times, 'times', { categoryId: id });
-      await ctx.reply({ text: v.TIMES_PROMPT });
+      await ctx.reply(adminPrompt(v.TIMES_PROMPT));
     })
 
     /* ----- days ----- */
@@ -90,23 +90,23 @@ export function registerScheduleRoutes(router: Router, d: Deps): Router {
       /^a:sch:times:(\d+)$/,
       withSchedule(async (ctx, id) => {
         await d.sessions.set(ctx.chatId, SCHEDULE_FLOW.times, 'times', { categoryId: id });
-        await ctx.reply({ text: v.TIMES_PROMPT });
+        await ctx.reply(adminPrompt(v.TIMES_PROMPT));
       }),
     )
     .callback(
       /^a:sch:label:(\d+)$/,
       withSchedule(async (ctx, id) => {
         await d.sessions.set(ctx.chatId, SCHEDULE_FLOW.label, 'label', { categoryId: id });
-        await ctx.reply({ text: v.LABEL_PROMPT });
+        await ctx.reply(adminPrompt(v.LABEL_PROMPT));
       }),
     )
 
     /* ----- capacity, lead time, horizon ----- */
-    .callback(/^a:sch:pick:(\d+):(cap|lead|hor)$/, async (ctx, [rawId, kind]) => {
+    .callback(/^a:sch:pick:(\d+):(cap|lead|hor|rem)$/, async (ctx, [rawId, kind]) => {
       const s = await d.schedules.find(Number(rawId));
       await ctx.render(s ? v.choicePage(s.category_id, kind as v.ChoiceKind, s) : await editor(Number(rawId)));
     })
-    .callback(/^a:sch:set:(\d+):(cap|lead|hor):(\d+)$/, async (ctx, [rawId, kind, value]) => {
+    .callback(/^a:sch:set:(\d+):(cap|lead|hor|rem):(\d+)$/, async (ctx, [rawId, kind, value]) => {
       const [column, min, max] = RANGES[kind as keyof typeof RANGES];
       if ((await d.schedules.find(Number(rawId))) && Number(value) >= min && Number(value) <= max) await d.schedules.update(Number(rawId), column, Number(value));
       await ctx.render(await editor(Number(rawId)));
@@ -159,7 +159,7 @@ const CLOSED_WINDOW = 21;
 export async function scheduleFlowStep(ctx: BotContext, s: Session<Record<string, unknown>>, d: Deps): Promise<void> {
   const id = Number(s.data.categoryId);
   const text = (ctx.text ?? '').trim();
-  const again = (message: string) => ctx.reply({ text: sections(message, CANCEL_HINT) });
+  const again = (message: string) => ctx.reply(adminPrompt(message));
 
   if (!text || text.startsWith('/')) return again('⚠️ لطفاً یک متن بفرستید.');
   if (s.flow === SCHEDULE_FLOW.times) {

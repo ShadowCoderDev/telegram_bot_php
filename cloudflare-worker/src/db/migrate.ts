@@ -6,6 +6,7 @@ import m0005 from '../../migrations/0005_cheaper_bookkeeping.sql';
 import m0006 from '../../migrations/0006_reads_that_scale.sql';
 import m0007 from '../../migrations/0007_data_retention.sql';
 import m0008 from '../../migrations/0008_schedules_and_inline.sql';
+import m0009 from '../../migrations/0009_appointment_reminders.sql';
 
 /**
  * The Worker brings its own database up to date on first use, so a plain `wrangler deploy`
@@ -22,6 +23,7 @@ const MIGRATIONS: { name: string; sql: string }[] = [
   { name: '0006_reads_that_scale.sql', sql: m0006 },
   { name: '0007_data_retention.sql', sql: m0007 },
   { name: '0008_schedules_and_inline.sql', sql: m0008 },
+  { name: '0009_appointment_reminders.sql', sql: m0009 },
 ];
 
 /**

@@ -3,7 +3,7 @@ import { flip, type Session } from '../db/models';
 import { EDITABLE_PRODUCT_FIELDS, SETTING_KEYS, type EditableProductField, type ProductDraft, type ProductImage, type SettingKey } from '../db/repositories';
 import type { AdminOrderAction } from '../services/orderStatus';
 import type { BotContext } from '../telegram/BotContext';
-import { backRow, button } from '../telegram/keyboard';
+import { backRow, button, inline } from '../telegram/keyboard';
 import type { Router } from '../telegram/Router';
 import type { View } from '../telegram/types';
 import { escapeHtml as e, money } from '../utils/format';
@@ -247,7 +247,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
       })
       .callback(/^a:prod:setcat:(\d+):(\d+)$/, async (ctx, [id, catId]) => {
         // Only a category of this shop is accepted, even from a forged button.
-        if (!(await d.products.setCategory(Number(id), Number(catId)))) await ctx.reply({ text: '❌ دسته‌بندی نامعتبر است.' });
+        if (!(await d.products.setCategory(Number(id), Number(catId)))) await ctx.reply(v.done('❌ دسته‌بندی نامعتبر است.'));
         await showProduct(ctx, Number(id));
       })
       .callback(/^a:prod:newcat:(\d+)$/, async (ctx, [catId]) => {
@@ -279,7 +279,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
             : result.reason === 'not_found'
               ? '❌ سفارش یافت نشد.'
               : '⚠️ این عملیات برای وضعیت فعلی سفارش مجاز نیست.';
-        await ctx.reply({ text: msg });
+        await ctx.reply(v.done(msg));
       })
 
       /* ----- customers ----- */
@@ -291,7 +291,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
       .callback(/^a:user:block:(\d+)$/, async (ctx, [id]) => {
         const user = await d.users.find(Number(id));
         if (!user) return ctx.render(v.done('❌ مشتری یافت نشد.'));
-        if (d.adminIds.includes(user.chat_id)) return ctx.reply({ text: '⚠️ ادمین را نمی‌توان مسدود کرد.' });
+        if (d.adminIds.includes(user.chat_id)) return ctx.reply(v.done('⚠️ ادمین را نمی‌توان مسدود کرد.'));
         const status = flip(user.status);
         await d.users.setStatus(user.id, status);
         // A blocked customer loses any open conversation with the admin.
@@ -308,7 +308,7 @@ export function registerAdminRoutes(router: Router, d: Deps): Router {
       /* ----- admin ↔ buyer dialog ----- */
       .callback(/^a:dialog:(\d+)$/, async (ctx, [id]) => {
         const order = await d.orders.find(Number(id));
-        if (!order) return ctx.reply({ text: '❌ سفارش یافت نشد.' });
+        if (!order) return ctx.reply(v.done('❌ سفارش یافت نشد.'));
         const buyer = await d.users.find(order.user_id);
         await openDialog(ctx, order.user_chat_id, order.id, buyer?.name ?? '');
       })
@@ -337,7 +337,7 @@ const STATUS_MESSAGES: Record<AdminOrderAction, string> = {
 function notifyBuyer(ctx: BotContext, { order, slots }: FullOrder, action: AdminOrderAction) {
   // A scheduled order's day and time ride along (not on a rejection: that frees the slot).
   const text = sections(STATUS_MESSAGES[action].replace('{t}', order.track_id), action !== 'reject' && slots.length > 0 && slotLines(slots));
-  return ctx.sendTo(order.user_chat_id, { text }).catch((err) => console.error('notify buyer', err));
+  return ctx.sendTo(order.user_chat_id, { text, keyboard: inline([button('📋 سفارش‌های من', CB.myOrders)], backRow(CB.home, '🏠 منوی اصلی')) }).catch((err) => console.error('notify buyer', err));
 }
 
 async function closeDialogFor(adminChatId: number, d: Deps) {
@@ -544,11 +544,11 @@ async function addProductStep(ctx: BotContext, s: Session<Data>, d: Deps, text: 
     case 'category': {
       // A new category, typed at the last step of adding a product.
       const { name, icon } = splitIcon(text);
-      if (!name) return ctx.reply({ text: '👆 یک دسته‌بندی را از دکمه‌ها انتخاب کنید، یا اسم دسته‌بندی جدید را بفرستید.' });
+      if (!name) return ctx.reply(v.prompt('👆 یک دسته‌بندی را از دکمه‌ها انتخاب کنید، یا اسم دسته‌بندی جدید را بفرستید.'));
       if (charCount(name) > LIMITS.categoryName) return ctx.reply(v.prompt(`⚠️ اسم دسته‌بندی حداکثر ${LIMITS.categoryName} کاراکتر باشد.`));
       const max = planLimits(d.shop.plan).categories;
       if ((await d.categories.list(false)).length >= max) {
-        return ctx.reply({ text: `⚠️ به سقف ${max} دسته‌بندی رسیده‌اید؛ یکی از دسته‌بندی‌های بالا را انتخاب کنید.` });
+        return ctx.reply(v.prompt(`⚠️ به سقف ${max} دسته‌بندی رسیده‌اید؛ یکی از دسته‌بندی‌های بالا را انتخاب کنید.`));
       }
       const categoryId = await d.categories.create(name, icon);
       return saveProduct(ctx, d, { ...data, category_id: categoryId } as ProductDraft, `${icon} ${name}`);

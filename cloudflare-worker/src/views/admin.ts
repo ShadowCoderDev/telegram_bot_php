@@ -12,7 +12,7 @@ import { escapeHtml as e, money, truncate } from '../utils/format';
 import { formatPersianDate } from '../utils/persian';
 import { CB } from './callbacks';
 import { slotLines } from './slots';
-import { CANCEL_HINT, contactLines, expandable, fa, heading, hint, itemsWithTotal, num, progress, quote, sections, toman } from './common';
+import { CANCEL_HINT, withCancel, contactLines, expandable, fa, heading, hint, itemsWithTotal, num, progress, quote, sections, toman } from './common';
 
 const A = CB.admin;
 const toAdminRoot = () => backRow(A.root, '🔙 پنل مدیریت');
@@ -140,7 +140,7 @@ export const closedAdminRoot = (awaitingReview: number, subscription: Subscripti
 });
 
 export const done = (text: string): View => ({ text, keyboard: inline(toAdminRoot()) });
-export const prompt = (text: string): View => ({ text: sections(text, CANCEL_HINT) });
+export const prompt = (text: string): View => withCancel(text, A.cancel);
 /** A step of a multi-step admin form, with a progress bar. */
 export const formStep = (title: string, step: number, total: number, body: string): View =>
   prompt(sections(`${heading('📝', title)}\n${progress(step, total)}`, body));

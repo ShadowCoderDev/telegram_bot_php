@@ -5,14 +5,16 @@ import { UNCAPPED, type DayUsage } from '../db/usage';
 import { PLAN_LIMITS } from '../limits';
 import { GRACE_DAYS, RENEW_OPTIONS, daysLeft, purgeAt, shopAccess, type Access, type ReminderStage } from '../services/subscription';
 import { backRow, button, inline, urlButton } from '../telegram/keyboard';
-import type { View } from '../telegram/types';
+import type { InlineKeyboardButton, View } from '../telegram/types';
 import { escapeHtml as e } from '../utils/format';
 import { formatPersianDate } from '../utils/persian';
-import { CANCEL_HINT, fa, heading, hint, num, quote, sections, toman } from './common';
+import { LEARN } from './tutorial';
+import { withCancel, fa, heading, hint, num, quote, sections, toman } from './common';
 
 /** Callback data of the platform bot ("p:" for sellers, "pa:" for the platform owner). */
 export const PCB = {
   home: 'p:home',
+  cancel: 'p:cancel',
   newShop: 'p:new',
   shops: 'p:shops',
   shop: (id: number) => `p:shop:${id}`,
@@ -45,6 +47,11 @@ export const PCB = {
   },
 } as const;
 
+/** Typed answers always come with a glass button to give up (same as /cancel). */
+const cancelRow = () => [button('✖️ انصراف', PCB.cancel)];
+export const prompt = (text: string): View => withCancel(text, PCB.cancel);
+/** A short message that always leaves a way back. */
+export const notice = (text: string, ...extra: InlineKeyboardButton[][]): View => ({ text, keyboard: inline(...extra, toHome()) });
 const toHome = () => backRow(PCB.home, '🏠 منوی اصلی');
 const date = (unix: number) => formatPersianDate(unix).split(' - ')[0];
 const botLink = (s: ShopRow) => (s.bot_username ? `@${e(s.bot_username)}` : `#${s.id}`);
@@ -118,8 +125,8 @@ export const newShopInstructions = (): View => ({
     '👇 همان توکن را همین‌جا بفرستید:',
     hint('بلد نیستید؟ «📚 آموزش» در منوی اصلی، قدم‌به‌قدم با عکس نشان می‌دهد.'),
     hint('توکن رمزنگاری‌شده ذخیره می‌شود و پیام شما بلافاصله پاک می‌شود.'),
-    CANCEL_HINT,
   ),
+  keyboard: inline([button('📚 آموزش ساخت ربات', LEARN.index)], cancelRow()),
 });
 
 export const shopCreated = (s: ShopRow, trialDays: number): View => ({
@@ -176,8 +183,8 @@ export const paymentInstructions = (s: ShopRow, months: number, amount: number, 
     `💰 <b>مبلغ قابل پرداخت</b>\n${quote(`<b>${toman(amount)}</b>`)}`,
     `🏦 <b>اطلاعات واریز</b> ${hint('(برای کپی لمس کنید)')}\n<code>${e(bankInfo)}</code>`,
     '📸 بعد از واریز، <b>عکس رسید</b> را همین‌جا بفرستید.',
-    CANCEL_HINT,
   ),
+  keyboard: inline(cancelRow()),
 });
 
 export const paymentReceived = (): View => ({
