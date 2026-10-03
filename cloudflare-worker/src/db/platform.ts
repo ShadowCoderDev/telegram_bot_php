@@ -96,7 +96,7 @@ export class ShopRepository extends GlobalRepository {
   setDailyLimit(id: number, limit: number | null) {
     return this.run('UPDATE shops SET daily_limit = ? WHERE id = ?', limit, id);
   }
-  /** Seller shops still open to customers (grace days included), grouped by what decides their cap. */
+  /** Seller shops still open to customers (paid up), grouped by what decides their cap. */
   openCapGroups(now: number) {
     return this.all<{ plan: ShopPlan; daily_limit: number | null; shops: number }>(
       `SELECT plan, daily_limit, count(*) AS shops FROM shops

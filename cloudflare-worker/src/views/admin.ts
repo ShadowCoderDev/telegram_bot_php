@@ -77,7 +77,7 @@ const subscriptionLine = (s: SubscriptionInfo): string => {
         ? `🎁 دوره‌ی آزمایشی: <b>${fa(s.daysLeft)}</b> روز مانده`
         : `${s.daysLeft <= 3 ? '⚠️' : '💳'} اشتراک: <b>${fa(s.daysLeft)}</b> روز مانده ${hint(`(تا ${until})`)}`;
     case 'grace':
-      return `⚠️ <b>اشتراک تمام شده.</b> فروشگاه فقط تا <b>${fa(GRACE_DAYS + s.daysLeft)}</b> روز دیگر برای مشتری‌ها باز است؛ لطفاً تمدید کنید.`;
+      return `⚠️ <b>اشتراک تمام شده و فروشگاه برای مشتری‌ها بسته است.</b> پنل شما تا <b>${fa(GRACE_DAYS + s.daysLeft)}</b> روز دیگر باز می‌ماند؛ برای باز شدن فروشگاه تمدید کنید.`;
     case 'expired':
       return '🔒 <b>اشتراک تمام شده و فروشگاه بسته است.</b> با تمدید، فوراً باز می‌شود.';
     case 'suspended':

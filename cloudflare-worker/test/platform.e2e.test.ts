@@ -219,6 +219,22 @@ describe('SaaS platform', () => {
     expect(hooks()).toHaveLength(before + 1); // once
   });
 
+  it('closes the shop to customers the moment the subscription ends, while the seller keeps the panel for the grace days', async () => {
+    sql(`UPDATE shops SET paid_until = ${now() - 86400} WHERE id = 2`); // expired yesterday: inside the 3 grace days
+    await shop.text(CUSTOMER, '/start');
+    expect(last(SHOP_TOKEN, CUSTOMER)).toContain('موقتاً در دسترس نیست');
+    await shop.press(CUSTOMER, 'shop');
+    expect(calls.at(-1)).toMatchObject({ method: 'answerCallbackQuery', params: { show_alert: true } });
+    await post('/webhook/2', shopSecret(), { inline_query: { id: 'iq-grace', from: { id: CUSTOMER, first_name: 'U' }, query: '', offset: '' } });
+    expect(calls.filter((c) => c.token === SHOP_TOKEN && c.method === 'answerInlineQuery').at(-1)!.params.results[0].title).toContain('موقتاً در دسترس نیست');
+    // The seller still has the whole panel, with a warning.
+    await shop.text(SELLER, '/start');
+    expect(byBot(SHOP_TOKEN, SELLER).at(-2)!.params.text).toContain('برای مشتری‌ها بسته است');
+    await shop.press(SELLER, 'a:cat:add');
+    expect(last(SHOP_TOKEN, SELLER)).not.toContain('اشتراک این فروشگاه تمام شده');
+    await shop.text(SELLER, '/cancel');
+  });
+
   it('closes the shop after expiry and grace: no products or orders for customers, only paid orders for its admin', async () => {
     sql(`UPDATE shops SET paid_until = ${now() - 4 * 86400} WHERE id = 2`);
     await shop.text(CUSTOMER, '/start');

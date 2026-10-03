@@ -65,7 +65,7 @@ export async function handleInline(d: Deps, q: InlineQuery): Promise<void> {
   if (flooding(`inline:${d.shop.id}:${q.from.id}`, 20, 10)) return;
 
   const access = shopAccess(d.shop, Math.floor(Date.now() / 1000));
-  if (access === 'expired' || access === 'suspended') {
+  if (access !== 'ok') {
     const results = [
       { type: 'article', id: 'closed', title: INLINE_CLOSED_TITLE, description: 'لطفاً بعداً دوباره سر بزنید.', input_message_content: { message_text: INLINE_CLOSED_TITLE } },
     ];

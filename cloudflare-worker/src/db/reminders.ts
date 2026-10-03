@@ -1,4 +1,3 @@
-import { DAY, GRACE_DAYS } from '../services/subscription';
 
 /** One booked slot whose reminder is due, with what is needed to send it. */
 export interface DueReminder {
@@ -47,10 +46,10 @@ export class ReminderRepository {
           WHERE s.reminded_at = 0 AND s.slot_at > ?1 AND s.slot_at <= ?1 + ?2
             AND cs.remind_minutes > 0 AND s.slot_at - cs.remind_minutes * 60 <= ?1
             AND o.status IN ('payed','approved','sending') AND o.time < s.slot_at - cs.remind_minutes * 60
-            AND sh.status = 'active' AND (sh.plan = 'owner' OR sh.paid_until >= ?1 - ?3)
-          ORDER BY s.slot_at LIMIT ?4`,
+            AND sh.status = 'active' AND (sh.plan = 'owner' OR sh.paid_until >= ?1)
+          ORDER BY s.slot_at LIMIT ?3`,
       )
-      .bind(now, MAX_REMIND_MINUTES * 60, GRACE_DAYS * DAY, limit)
+      .bind(now, MAX_REMIND_MINUTES * 60, limit)
       .all<DueReminder>();
     return r.results;
   }

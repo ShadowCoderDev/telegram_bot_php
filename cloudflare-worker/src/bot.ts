@@ -57,10 +57,11 @@ export function createBot(d: Deps) {
     const alert = capAlert(tracked.updates, cap);
     if (alert) await capacityAlert(d, alert, cap);
 
-    // Subscription gate: a shop whose subscription ran out (after the grace days) or that the
-    // platform suspended is closed to customers; its admins still get in, to renew and finish orders.
+    // Subscription gate: a shop whose subscription ran out (the grace days included) or that the
+    // platform suspended is closed to customers at once, so nobody can use it unpaid. Its admins
+    // still get in during the grace days, to renew; after that only to renew and finish paid orders.
     const access = shopAccess(d.shop, now);
-    if (!ctx.isAdmin && (access === 'expired' || access === 'suspended')) {
+    if (!ctx.isAdmin && access !== 'ok') {
       if (cb) await d.tg.answerCallbackQuery(cb.id, CLOSED_TEXT, true).catch(() => {});
       else await d.tg.sendMessage(ctx.chatId, CLOSED_TEXT);
       return;
